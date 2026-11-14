@@ -76,6 +76,8 @@ jobs:
             diagnostics="$(grep -nE '(^e: |error:|^FAILURE:|What went wrong:|^> Task .*FAILED|^Execution failed|^BUILD FAILED|FAILED$)' "$RUNNER_TEMP/gradle.log" | tail -n 40 || true)"
             echo "::error title=Gradle failure details (base64)::$(printf '%s' "$diagnostics" | base64 -w0)"
             tail -n 60 "$RUNNER_TEMP/gradle.log"
+            lint_xml="$(sed -n '/Lint found/,/BUILD FAILED/p' "$RUNNER_TEMP/gradle.log" | head -n 80 || true)"
+            if [[ -n "$lint_xml" ]]; then echo "::error title=Lint details (base64)::$(printf '%s' "$lint_xml" | base64 -w0)"; fi
             failure_xml="$(grep -Rh -A 8 '<failure' androidApp/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -n 300 || true)"
             if [[ -n "$failure_xml" ]]; then echo "::error title=Unit test failures (base64)::$(printf '%s' "$failure_xml" | base64 -w0)"; fi
           fi

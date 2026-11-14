@@ -103,7 +103,11 @@ class AlarmRuntimeController @Inject constructor(
             database.alarmDao().setAlarmRinging(alarmId, true)
             true
         }
-        if (!activated || !runtimeStore.isActive(alarmId, instanceId)) return@withLock false
+        if (!activated || !runtimeStore.isActive(alarmId, instanceId)) {
+            stopImmediately(alarmId, instanceId)
+            notificationManager().cancel(runtimeStore.all().find { it.instanceId == instanceId }?.notificationId ?: AlarmIdentity.notificationId(instanceId))
+            return@withLock false
+        }
 
         val alarm = database.alarmDao().getAlarmById(alarmId) ?: return@withLock false
         if (!isSnooze) {
