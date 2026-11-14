@@ -21,8 +21,10 @@ class ChronosApplication : Application() {
         super.onCreate()
         notificationHelper.createNotificationChannels()
         applicationScope.launch {
-            runCatching { runtimeController.reconcileOnAppStart(); reminderRepository.reconcile() }
+            runCatching { runtimeController.reconcileOnAppStart() }
                 .onFailure { android.util.Log.e("ChronosApplication", "Alarm reconciliation failed", it) }
+            runCatching { reminderRepository.reconcile() }
+                .onFailure { android.util.Log.e("ChronosApplication", "Reminder reconciliation failed", it) }
         }
     }
 }

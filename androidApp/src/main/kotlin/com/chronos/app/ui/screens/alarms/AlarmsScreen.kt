@@ -86,6 +86,7 @@ fun AlarmsScreen() {
     val viewModel: AlarmViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val preferences by settingsViewModel.preferences.collectAsStateWithLifecycle()
+    val haptic = com.chronos.app.ui.components.rememberChronosHaptic(preferences)
     val alarms by viewModel.alarms.collectAsStateWithLifecycle()
     val error by viewModel.errorMessage.collectAsStateWithLifecycle()
     var editTarget by remember { mutableStateOf<Alarm?>(null) }
@@ -123,7 +124,7 @@ fun AlarmsScreen() {
                     color = palette.textTertiary
                 )
             }
-            IconButton(onClick = { isCreating = true }) {
+            IconButton(onClick = { haptic(); isCreating = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Create alarm", tint = palette.accentPrimary)
             }
         }
@@ -213,7 +214,7 @@ fun AlarmsScreen() {
 
     deleting?.let { alarm ->
         AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this alarm?") },
-            text = { Text("${alarm.label.ifBlank { "This alarm" }} at ${alarm.formatTime(is24Hour)} will be removed. This cannot be undone.") },
+            text = { Text("${alarm.label.ifBlank { "This alarm" }} at ${alarm.formatTime(preferences.is24Hour)} will be removed. This cannot be undone.") },
             confirmButton = { TextButton(onClick = { viewModel.deleteAlarm(alarm); deleting = null; editTarget = null }) { Text("Delete", color = palette.statusError) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Keep") } })
     }

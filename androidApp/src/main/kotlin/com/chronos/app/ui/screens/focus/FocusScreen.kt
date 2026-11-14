@@ -56,6 +56,7 @@ import kotlinx.coroutines.delay
 fun FocusScreen() {
     val palette = LocalChronosPalette.current
     val viewModel: FocusViewModel = hiltViewModel()
+    val haptic = com.chronos.app.ui.components.rememberChronosHaptic(viewModel.preferences.collectAsStateWithLifecycle().value)
     val runtime by viewModel.runtime.collectAsStateWithLifecycle()
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
@@ -109,7 +110,7 @@ fun FocusScreen() {
                     }
                     Spacer(Modifier.height(16.dp))
                     Button(
-                        onClick = { viewModel.start(label, selectedMinutes) },
+                        onClick = { haptic(); viewModel.start(label, selectedMinutes) },
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                         shape = RoundedCornerShape(18.dp)
                     ) {

@@ -240,17 +240,24 @@ class AlarmRuntimeController @Inject constructor(
     }
 
     suspend fun recoverAfterBoot() {
+        val ringing = database.alarmInstanceDao().getRingingInstances()
         runtimeStore.clear()
-        notificationManager().activeNotifications.filter { it.id != AlarmPlaybackService.NOTIFICATION_ID }.forEach {
-            // Only cancel IDs owned by known alarm instances, never reminder/timer notifications.
-            val owns = database.alarmInstanceDao().getById(it.tag ?: "") != null
-            if (owns) notificationManager().cancel(it.tag, it.id)
-        }
+        ringing.forEach { notificationManager().cancel(AlarmIdentity.notificationId(it.instanceId)) }
         notificationManager().cancel(AlarmPlaybackService.NOTIFICATION_ID)
+        val now = System.currentTimeMillis()
         database.withTransaction {
             database.alarmInstanceDao().interruptRingingInstances()
             database.alarmDao().clearRingingFlags()
+            ringing.forEach { instance ->
+                database.alarmHistoryDao().insertHistory(AlarmHistory(
+                    alarmId = instance.alarmId,
+                    alarmLabel = database.alarmDao().getAlarmById(instance.alarmId)?.label.orEmpty(),
+                    scheduledTime = instance.scheduledTimestamp, actualTime = null,
+                    action = "missed", timestamp = now
+                ))
+            }
         }
+        // rescheduleSchedules restores pending snoozes exactly once.
         rescheduleSchedules()
     }
 

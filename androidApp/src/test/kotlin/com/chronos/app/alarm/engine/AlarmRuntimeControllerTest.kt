@@ -133,5 +133,20 @@ class AlarmRuntimeControllerTest {
         assertEquals(AlarmInstance.RINGING, db.alarmInstanceDao().getById(instance)?.state)
     }
 
+    @Test fun bootInterruptsRingingAndRecordsMissedWithoutDisablingRepeats() = runTest {
+        seed(repeat = true); activate()
+        controller.recoverAfterBoot()
+        assertEquals(AlarmInstance.INTERRUPTED, db.alarmInstanceDao().getById(instance)?.state)
+        assertFalse(store.isActive(1, instance))
+        assertTrue(db.alarmDao().getAlarmById(1)!!.isEnabled)
+        assertEquals(1, db.alarmHistoryDao().getRecentHistory().firstValue().count { it.action == "missed" })
+    }
+
+    @Test fun tamperedInstanceIdIsIgnored() = runTest {
+        seed(); activate()
+        assertFalse(controller.dismiss(1, "forged", scheduled, false))
+        assertEquals(AlarmInstance.RINGING, db.alarmInstanceDao().getById(instance)?.state)
+    }
+
     private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.firstValue(): T = this.first()
 }

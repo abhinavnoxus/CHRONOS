@@ -34,9 +34,11 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                if (isDeviceStart) runtimeController.recoverAfterBoot()
-                else runtimeController.rescheduleSchedules()
-                reminderRepository.reconcile()
+                runCatching {
+                    if (isDeviceStart) runtimeController.recoverAfterBoot() else runtimeController.rescheduleSchedules()
+                }.onFailure { Log.e(TAG, "Alarm recovery failed", it) }
+                runCatching { reminderRepository.reconcile() }
+                    .onFailure { Log.e(TAG, "Reminder recovery failed", it) }
                 Log.i(TAG, "Alarm schedules reconciled after $action")
             } catch (exception: Exception) {
                 Log.e(TAG, "Alarm recovery failed after $action", exception)
