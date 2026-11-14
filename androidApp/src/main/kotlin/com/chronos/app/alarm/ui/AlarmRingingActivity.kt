@@ -1,6 +1,9 @@
 package com.chronos.app.alarm.ui
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -10,83 +13,86 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chronos.app.alarm.engine.AlarmIdentity
+import com.chronos.app.alarm.engine.AlarmRuntimeController
 import com.chronos.app.alarm.engine.AlarmScheduler
-import com.chronos.app.alarm.receiver.AlarmDismissReceiver
-import com.chronos.app.alarm.receiver.AlarmSnoozeReceiver
+import com.chronos.app.di.ApplicationScope
 import com.chronos.app.settings.ChronosPreferences
 import com.chronos.app.settings.ChronosSettings
 import com.chronos.app.theme.ChronosTheme
 import com.chronos.app.theme.LocalChronosPalette
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
+/** Lock-screen UI and the no-trampoline notification dismissal entry point. */
 @AndroidEntryPoint
 class AlarmRingingActivity : ComponentActivity() {
     @Inject lateinit var chronosSettings: ChronosSettings
-
+    @Inject lateinit var runtimeController: AlarmRuntimeController
+    @Inject @ApplicationScope lateinit var applicationScope: CoroutineScope
     private var ringingAlarm by mutableStateOf<RingingAlarm?>(null)
+    private var status by mutableStateOf<String?>(null)
+    private val finishedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getStringExtra(AlarmScheduler.EXTRA_INSTANCE_ID) == ringingAlarm?.instanceId) finish()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        showOnLockScreen()
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        activeActivity = this
-        ringingAlarm = intent.toRingingAlarm()
-
+        handleIntent(intent)
+        if (isFinishing) return
+        val filter = IntentFilter(AlarmRuntimeController.ACTION_INSTANCE_FINISHED)
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(finishedReceiver, filter, RECEIVER_NOT_EXPORTED)
+        else @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(finishedReceiver, filter)
         setContent {
-            val preferences by chronosSettings.preferences.collectAsStateWithLifecycle(
-                initialValue = ChronosPreferences.Default
-            )
+            val preferences by chronosSettings.preferences.collectAsStateWithLifecycle(initialValue = ChronosPreferences.Default)
             ChronosTheme(preferences) {
                 val alarm = ringingAlarm
                 if (alarm != null) {
-                    AlarmRingingScreen(
-                        alarmLabel = alarm.label,
-                        is24Hour = preferences.is24Hour,
-                        onDismiss = { dispatchDismiss(alarm) },
-                        onSnooze = { dispatchSnooze(alarm) }
-                    )
+                    LaunchedEffect(alarm.instanceId) {
+                        if (!runtimeController.isInstanceRinging(alarm.id, alarm.instanceId)) finish()
+                    }
+                    RingingScreen(alarm.label, preferences.is24Hour, status,
+                        onDismiss = { dismiss(alarm) }, onSnooze = { snooze(alarm) })
                 }
             }
         }
@@ -95,200 +101,87 @@ class AlarmRingingActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        ringingAlarm = intent.toRingingAlarm()
+        handleIntent(intent)
     }
 
-    private fun showOnLockScreen() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
+    private fun handleIntent(intent: Intent) {
+        val alarm = intent.toRingingAlarm()
+        if (alarm == null) { finish(); return }
+        if (intent.action == ACTION_DISMISS_FROM_NOTIFICATION) {
+            dismiss(alarm)
+            return
         }
+        ringingAlarm = alarm
+        status = null
     }
 
     private fun Intent.toRingingAlarm(): RingingAlarm? {
         val id = getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
         val instanceId = getStringExtra(AlarmScheduler.EXTRA_INSTANCE_ID).orEmpty()
-        if (id < 0L || instanceId.isBlank()) return null
-        return RingingAlarm(
-            id = id,
-            instanceId = instanceId,
-            scheduledAt = getLongExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, 0L),
-            isSnooze = getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false),
-            label = getStringExtra(AlarmScheduler.EXTRA_ALARM_LABEL).orEmpty()
-        )
+        val scheduledAt = getLongExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, 0L)
+        val isSnooze = getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false)
+        if (!AlarmIdentity.matches(id, instanceId, scheduledAt, isSnooze)) return null
+        return RingingAlarm(id, instanceId, scheduledAt, isSnooze, getStringExtra(AlarmScheduler.EXTRA_ALARM_LABEL).orEmpty())
     }
 
-    private fun dispatchDismiss(alarm: RingingAlarm) {
-        sendBroadcast(Intent(this, AlarmDismissReceiver::class.java).apply {
-            action = "com.chronos.action.DISMISS_ALARM"
-            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id)
-            putExtra(AlarmScheduler.EXTRA_INSTANCE_ID, alarm.instanceId)
-            putExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, alarm.scheduledAt)
-            putExtra(AlarmScheduler.EXTRA_IS_SNOOZE, alarm.isSnooze)
-        })
+    private fun dismiss(alarm: RingingAlarm) {
+        runtimeController.stopImmediately(alarm.id, alarm.instanceId)
+        applicationScope.launch {
+            try { runtimeController.dismiss(alarm.id, alarm.instanceId, alarm.scheduledAt, alarm.isSnooze) }
+            finally { runOnUiThread { finish() } }
+        }
         finish()
     }
 
-    private fun dispatchSnooze(alarm: RingingAlarm) {
-        sendBroadcast(Intent(this, AlarmSnoozeReceiver::class.java).apply {
-            action = "com.chronos.action.SNOOZE_ALARM"
-            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id)
-            putExtra(AlarmScheduler.EXTRA_INSTANCE_ID, alarm.instanceId)
-            putExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, alarm.scheduledAt)
-            putExtra(AlarmScheduler.EXTRA_IS_SNOOZE, alarm.isSnooze)
-        })
+    private fun snooze(alarm: RingingAlarm) {
+        status = "Scheduling snooze…"
+        applicationScope.launch {
+            val success = try { runtimeController.snooze(alarm.id, alarm.instanceId, alarm.scheduledAt, alarm.isSnooze) } catch (_: Exception) { false }
+            runOnUiThread {
+                if (success) finish() else status = "Snooze could not be scheduled. The alarm is still active; you can stop it."
+            }
+        }
     }
 
     override fun onDestroy() {
-        if (activeActivity === this) activeActivity = null
+        runCatching { unregisterReceiver(finishedReceiver) }
         super.onDestroy()
     }
 
-    private data class RingingAlarm(
-        val id: Long,
-        val instanceId: String,
-        val scheduledAt: Long,
-        val isSnooze: Boolean,
-        val label: String
-    )
-
+    private data class RingingAlarm(val id: Long, val instanceId: String, val scheduledAt: Long, val isSnooze: Boolean, val label: String)
     companion object {
-        @Volatile private var activeActivity: AlarmRingingActivity? = null
-
-        fun finishForInstance(instanceId: String) {
-            val activity = activeActivity ?: return
-            if (activity.ringingAlarm?.instanceId == instanceId) {
-                activity.runOnUiThread { if (!activity.isFinishing) activity.finish() }
-            }
-        }
+        const val ACTION_DISMISS_FROM_NOTIFICATION = "com.chronos.action.DISMISS_FROM_NOTIFICATION"
     }
 }
 
 @Composable
-private fun AlarmRingingScreen(
-    alarmLabel: String,
-    is24Hour: Boolean,
-    onDismiss: () -> Unit,
-    onSnooze: () -> Unit
-) {
+private fun RingingScreen(label: String, is24Hour: Boolean, status: String?, onDismiss: () -> Unit, onSnooze: () -> Unit) {
     val palette = LocalChronosPalette.current
     var now by androidx.compose.runtime.remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(1_000L)
-        }
-    }
-    val time = rememberAlarmTime(now, is24Hour)
-    val date = rememberAlarmDate(now)
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(palette.backgroundSecondary, palette.backgroundPrimary, palette.backgroundPrimary)
-                )
-            )
-            .padding(horizontal = 28.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Alarm,
-                contentDescription = null,
-                tint = palette.accentPrimary,
-                modifier = Modifier.size(48.dp)
-            )
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1_000L) } }
+    Box(Modifier.fillMaxSize().background(palette.backgroundPrimary).padding(28.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(Icons.Default.Alarm, contentDescription = null, tint = palette.accentPrimary, modifier = Modifier.size(48.dp))
             Spacer(Modifier.height(24.dp))
-            if (alarmLabel.isNotBlank()) {
-                Text(
-                    text = alarmLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = palette.accentPrimary,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(16.dp))
-            }
-            Text(
-                text = time,
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Light,
-                    fontSize = 76.sp,
-                    letterSpacing = (-2).sp
-                ),
-                color = palette.textPrimary,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = date,
-                style = MaterialTheme.typography.labelLarge,
-                color = palette.textSecondary,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(32.dp))
-            AlarmSoundMark(color = palette.accentPrimary)
-            Spacer(Modifier.height(40.dp))
-
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = palette.accentPrimary,
-                    contentColor = Color(0xFF211A0E)
-                )
-            ) {
-                Icon(Icons.Default.Close, contentDescription = null)
-                Spacer(Modifier.size(10.dp))
-                Text("Dismiss alarm", style = MaterialTheme.typography.titleMedium)
+            Text(label.ifBlank { "Your alarm" }, style = MaterialTheme.typography.titleLarge, color = palette.accentPrimary, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(16.dp))
+            Text(SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date(now)),
+                style = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Light, fontSize = 72.sp),
+                color = palette.textPrimary)
+            Text(SimpleDateFormat("EEEE · MMMM d", Locale.getDefault()).format(Date(now)), style = MaterialTheme.typography.labelLarge, color = palette.textSecondary)
+            Spacer(Modifier.height(48.dp))
+            // Critical actions are never gated by an animation or transition.
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(20.dp)) {
+                Icon(Icons.Default.Close, null); Spacer(Modifier.size(10.dp)); Text("Stop alarm", style = MaterialTheme.typography.titleMedium)
             }
             Spacer(Modifier.height(14.dp))
-            OutlinedButton(
-                onClick = onSnooze,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Icon(Icons.Default.Snooze, contentDescription = null, tint = palette.accentPrimary)
-                Spacer(Modifier.size(10.dp))
-                Text("Snooze", color = palette.textPrimary, style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = onSnooze, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) {
+                Icon(Icons.Default.Snooze, null); Spacer(Modifier.size(10.dp)); Text("Snooze", style = MaterialTheme.typography.titleMedium)
+            }
+            if (status != null) {
+                Spacer(Modifier.height(16.dp))
+                Text(status, style = MaterialTheme.typography.bodyMedium, color = palette.statusWarning, textAlign = TextAlign.Center)
             }
         }
     }
-}
-
-@Composable
-private fun AlarmSoundMark(color: Color) {
-    val heights = listOf(18, 28, 42, 54, 38, 28, 46, 24, 34, 50, 28, 18)
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        heights.forEachIndexed { index, height ->
-            Spacer(
-                modifier = Modifier
-                    .size(width = 4.dp, height = height.dp)
-                    .background(color.copy(alpha = if (index % 3 == 0) 0.95f else 0.54f), CircleShape)
-            )
-        }
-    }
-}
-
-@Composable
-private fun rememberAlarmTime(now: Long, is24Hour: Boolean): String =
-    androidx.compose.runtime.remember(now / 1_000L, is24Hour) {
-        SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date(now))
-    }
-
-@Composable
-private fun rememberAlarmDate(now: Long): String = androidx.compose.runtime.remember(now / 86_400_000L) {
-    SimpleDateFormat("EEEE · MMMM d", Locale.getDefault()).format(Date(now))
 }

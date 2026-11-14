@@ -1,19 +1,26 @@
 package com.chronos.app
 
 import android.app.Application
-import androidx.hilt.work.HiltWorkerFactory
-import androidx.work.Configuration
+import com.chronos.app.alarm.engine.AlarmRuntimeController
+import com.chronos.app.di.ApplicationScope
+import com.chronos.app.notifications.NotificationHelper
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
-class ChronosApplication : Application(), Configuration.Provider {
+class ChronosApplication : Application() {
+    @Inject lateinit var runtimeController: AlarmRuntimeController
+    @Inject lateinit var notificationHelper: NotificationHelper
+    @Inject @ApplicationScope lateinit var applicationScope: CoroutineScope
 
-    @Inject lateinit var workerFactory: HiltWorkerFactory
-
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .setMinimumLoggingLevel(android.util.Log.INFO)
-            .build()
+    override fun onCreate() {
+        super.onCreate()
+        notificationHelper.createNotificationChannels()
+        applicationScope.launch {
+            runCatching { runtimeController.reconcileOnAppStart() }
+                .onFailure { android.util.Log.e("ChronosApplication", "Alarm reconciliation failed", it) }
+        }
+    }
 }

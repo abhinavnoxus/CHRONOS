@@ -5,58 +5,69 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Small synchronous process-independent guard used before showing an alarm notification. */
+/** Durable, exact-instance ownership mirror. Room remains the authoritative lifecycle record. */
 @Singleton
-class AlarmRuntimeStore @Inject constructor(
-    @ApplicationContext context: Context
-) {
-    data class ActiveAlarm(val alarmId: Long, val instanceId: String, val scheduledAt: Long, val isSnooze: Boolean)
+class AlarmRuntimeStore @Inject constructor(@ApplicationContext context: Context) {
+    data class ActiveAlarm(
+        val alarmId: Long,
+        val instanceId: String,
+        val scheduledAt: Long,
+        val isSnooze: Boolean,
+        val activatedAt: Long = 0L
+    )
 
     private val preferences = context.getSharedPreferences("chronos_alarm_runtime", Context.MODE_PRIVATE)
 
     @Synchronized
     fun activate(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean) {
+        val ids = preferences.getStringSet(KEY_ACTIVE_IDS, emptySet())!!.toMutableSet()
+        ids.add(instanceId)
         preferences.edit()
-            .putLong(KEY_ALARM_ID, alarmId)
-            .putString(KEY_INSTANCE_ID, instanceId)
-            .putLong(KEY_SCHEDULED_AT, scheduledAt)
-            .putBoolean(KEY_IS_SNOOZE, isSnooze)
+            .putStringSet(KEY_ACTIVE_IDS, ids)
+            .putLong(key(instanceId, "alarm"), alarmId)
+            .putLong(key(instanceId, "scheduled"), scheduledAt)
+            .putBoolean(key(instanceId, "snooze"), isSnooze)
+            .putLong(key(instanceId, "activated"), System.currentTimeMillis())
             .commit()
     }
 
     @Synchronized
-    fun active(): ActiveAlarm? {
-        val instanceId = preferences.getString(KEY_INSTANCE_ID, null) ?: return null
-        val alarmId = preferences.getLong(KEY_ALARM_ID, INVALID_ALARM_ID)
-        if (alarmId == INVALID_ALARM_ID) return null
-        return ActiveAlarm(
-            alarmId = alarmId,
-            instanceId = instanceId,
-            scheduledAt = preferences.getLong(KEY_SCHEDULED_AT, 0L),
-            isSnooze = preferences.getBoolean(KEY_IS_SNOOZE, false)
-        )
+    fun active(): ActiveAlarm? = all().maxByOrNull { it.activatedAt }
+
+    @Synchronized
+    fun all(): List<ActiveAlarm> {
+        val ids = preferences.getStringSet(KEY_ACTIVE_IDS, emptySet()) ?: emptySet()
+        return ids.mapNotNull { id ->
+            val alarmId = preferences.getLong(key(id, "alarm"), -1L)
+            val scheduledAt = preferences.getLong(key(id, "scheduled"), 0L)
+            if (alarmId < 0L || !AlarmIdentity.matches(alarmId, id, scheduledAt, preferences.getBoolean(key(id, "snooze"), false))) {
+                null
+            } else ActiveAlarm(
+                alarmId, id, scheduledAt, preferences.getBoolean(key(id, "snooze"), false),
+                preferences.getLong(key(id, "activated"), 0L)
+            )
+        }
     }
 
     @Synchronized
     fun isActive(alarmId: Long, instanceId: String): Boolean =
-        active()?.let { it.alarmId == alarmId && it.instanceId == instanceId } == true
+        preferences.getStringSet(KEY_ACTIVE_IDS, emptySet())!!.contains(instanceId) &&
+            preferences.getLong(key(instanceId, "alarm"), -1L) == alarmId
 
     @Synchronized
     fun clearIfActive(alarmId: Long, instanceId: String): Boolean {
         if (!isActive(alarmId, instanceId)) return false
-        return preferences.edit().clear().commit()
+        val ids = preferences.getStringSet(KEY_ACTIVE_IDS, emptySet())!!.toMutableSet().apply { remove(instanceId) }
+        preferences.edit().remove(key(instanceId, "alarm")).remove(key(instanceId, "scheduled"))
+            .remove(key(instanceId, "snooze")).remove(key(instanceId, "activated"))
+            .putStringSet(KEY_ACTIVE_IDS, ids).commit()
+        return true
     }
 
     @Synchronized
-    fun clear() {
-        preferences.edit().clear().commit()
-    }
+    fun clear() { preferences.edit().clear().commit() }
 
-    companion object {
-        private const val KEY_ALARM_ID = "alarm_id"
-        private const val KEY_INSTANCE_ID = "instance_id"
-        private const val KEY_SCHEDULED_AT = "scheduled_at"
-        private const val KEY_IS_SNOOZE = "is_snooze"
-        private const val INVALID_ALARM_ID = -1L
-    }
+    private fun key(instanceId: String, field: String) = "instance:$instanceId:$field"
+
+    companion object { private const val KEY_ACTIVE_IDS = "active_instance_ids" }
 }

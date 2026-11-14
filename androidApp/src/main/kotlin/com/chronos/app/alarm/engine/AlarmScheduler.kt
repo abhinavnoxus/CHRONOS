@@ -38,12 +38,11 @@ class AlarmScheduler @Inject constructor(
         const val ACTION_TRIGGER_ALARM = "com.chronos.action.TRIGGER_ALARM"
 
         fun generateRequestCode(alarmId: Long, salt: Int = 0): Int {
-            val folded = (alarmId xor (alarmId ushr 32)).toInt()
-            return (folded xor (salt * 0x45d9f3b)) and 0x7fffffff
+            return AlarmIdentity.requestCode(alarmId, salt)
         }
 
         fun instanceId(alarmId: Long, scheduledAt: Long, isSnooze: Boolean): String =
-            "$alarmId:${if (isSnooze) "snooze" else "alarm"}:$scheduledAt"
+            AlarmIdentity.instance(alarmId, scheduledAt, isSnooze)
     }
 
     private val alarmManager: AlarmManager
@@ -192,11 +191,7 @@ class AlarmScheduler @Inject constructor(
             }
         }
         val requestCode = generateRequestCode(alarmId, if (isSnooze) 2 else 1)
-        return if (flags and PendingIntent.FLAG_NO_CREATE != 0) {
-            PendingIntent.getBroadcast(context, requestCode, intent, flags)
-        } else {
-            PendingIntent.getBroadcast(context, requestCode, intent, flags)
-        }
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
     }
 
     private fun getShowAlarmPendingIntent(): PendingIntent {

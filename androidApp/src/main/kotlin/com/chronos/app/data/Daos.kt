@@ -64,6 +64,12 @@ interface AlarmInstanceDao {
     @Query("SELECT * FROM alarm_instances WHERE state = 'ringing' ORDER BY triggeredAt DESC LIMIT 1")
     suspend fun getActiveRinging(): AlarmInstance?
 
+    @Query("SELECT * FROM alarm_instances WHERE state = 'ringing' ORDER BY triggeredAt DESC")
+    suspend fun getRingingInstances(): List<AlarmInstance>
+
+    @Query("SELECT * FROM alarm_instances WHERE alarmId = :alarmId AND state = 'ringing' LIMIT 1")
+    suspend fun getRingingForAlarm(alarmId: Long): AlarmInstance?
+
     @Query("SELECT * FROM alarm_instances WHERE state = 'snoozed' AND snoozedUntil IS NOT NULL")
     suspend fun getPendingSnoozes(): List<AlarmInstance>
 
