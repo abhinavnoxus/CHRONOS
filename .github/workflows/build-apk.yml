@@ -34,34 +34,36 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon :androidApp:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon :androidApp:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log"
 
       - name: Build APK
-        run: ./gradlew --no-daemon :androidApp:assembleDebug --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon :androidApp:assembleDebug --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
 
       - name: Surface Gradle failure details
         if: failure()
         run: |
           if [[ -f "$RUNNER_TEMP/gradle.log" ]]; then
-            encoded_log="$(tail -n 60 "$RUNNER_TEMP/gradle.log" | base64 -w0)"
-            echo "::error title=Gradle failure tail (base64)::$encoded_log"
+            diagnostics="$({
+              echo 'Gradle error lines:'
+              grep -nE '(^e: |error:|^FAILURE:|What went wrong:|^> Task .*FAILED|^Execution failed|^BUILD FAILED)' "$RUNNER_TEMP/gradle.log" | tail -n 30 || true
+              echo 'Final Gradle output:'
+              tail -n 30 "$RUNNER_TEMP/gradle.log"
+            } 2>&1)"
+            encoded_log="$(printf '%s' "$diagnostics" | base64 -w0)"
+            echo "::error title=Gradle failure details (base64)::$encoded_log"
           fi
 
       - name: Give APK a clear download name
         run: |
           apk_path="$(find . -type f -iname '*.apk' -print -quit || true)"
           if [[ -z "$apk_path" ]]; then
-            diagnostics="$({
-              printf 'PWD=%s\nGITHUB_WORKSPACE=%s\n' "$PWD" "$GITHUB_WORKSPACE"
-              printf 'App output directories:\n'
-              find androidApp/build/outputs -maxdepth 6 -print 2>&1 | head -n 40 || true
-              printf 'APK/AAB files in workspace:\n'
-              find . -maxdepth 12 -type f \( -iname '*.apk' -o -iname '*.aab' \) -print || true
-              printf 'Gradle task summary:\n'
-              grep -E '(^> Task|BUILD SUCCESSFUL|BUILD FAILED|NO-SOURCE|UP-TO-DATE|FROM-CACHE|SKIPPED|packageDebug|assembleDebug)' "$RUNNER_TEMP/gradle.log" | tail -n 35 || true
-            } 2>&1)"
-            encoded_diagnostics="$(printf '%s' "$diagnostics" | base64 -w0)"
-            echo "::error title=APK missing diagnostics (base64)::$encoded_diagnostics"
+            echo "::error title=APK missing::Gradle reported success but no APK was produced."
             exit 1
           fi
           cp "$apk_path" "CHRONOS-v${GITHUB_SHA::7}-debug.apk"
