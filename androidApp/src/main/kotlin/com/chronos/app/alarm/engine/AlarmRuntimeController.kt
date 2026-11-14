@@ -1,244 +1,318 @@
-package com.chronos.app.data
+package com.chronos.app.alarm.engine
 
-import androidx.room.*
-import com.chronos.app.data.model.*
-import kotlinx.coroutines.flow.Flow
+import android.app.NotificationManager
+import android.content.Context
+import android.util.Log
+import androidx.room.withTransaction
+import com.chronos.app.alarm.service.AlarmPlaybackService
+import com.chronos.app.data.ChronosDatabase
+import com.chronos.app.data.model.AlarmHistory
+import com.chronos.app.data.model.AlarmInstance
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import javax.inject.Inject
+import javax.inject.Singleton
 
-@Dao
-interface AlarmDao {
+/**
+ * Single authority for the lifecycle of one alarm firing.
+ *
+ * The Room `alarm_instances` row is the source of truth. The SharedPreferences slot and the
+ * playback-service singleton are only fast, best-effort mirrors used to stop audio without
+ * waiting for a database round trip. A dismissal is therefore honoured even when the process
+ * was recreated, the service singleton is gone, or the tap arrives before activation committed.
+ */
+@Singleton
+class AlarmRuntimeController @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val database: ChronosDatabase,
+    private val alarmScheduler: AlarmScheduler,
+    private val runtimeStore: AlarmRuntimeStore
+) {
+    // All authoritative lifecycle transitions are serialized. Fast audio stopping is not delayed.
+    private val transitionMutex = Mutex()
+    private val activationMutex = transitionMutex
+    private val snoozeMutex = transitionMutex
+    private val dismissalMutex = transitionMutex
 
-    @Query("SELECT * FROM alarms ORDER BY hour, minute")
-    fun getAllAlarms(): Flow<List<Alarm>>
+    fun isActive(alarmId: Long, instanceId: String): Boolean =
+        runtimeStore.isActive(alarmId, instanceId)
 
-    @Query("SELECT * FROM alarms WHERE isEnabled = 1 ORDER BY hour, minute")
-    fun getEnabledAlarms(): Flow<List<Alarm>>
+    /** True when the fast mirror or the authoritative instance row still says this firing is live. */
+    suspend fun isInstanceRinging(alarmId: Long, instanceId: String): Boolean {
+        if (runtimeStore.isActive(alarmId, instanceId)) return true
+        val instance = database.alarmInstanceDao().getById(instanceId) ?: return false
+        return instance.alarmId == alarmId && instance.state == AlarmInstance.RINGING
+    }
 
-    @Query("SELECT * FROM alarms WHERE isEnabled = 1 ORDER BY hour, minute")
-    suspend fun getEnabledAlarmsSync(): List<Alarm>
+    /**
+     * Immediately silences audio/vibration/notification when this exact instance owns them.
+     * Returns true when a fast mirror was cleared. Never touches another alarm's playback.
+     */
+    fun stopImmediately(alarmId: Long, instanceId: String): Boolean {
+        val owned = runtimeStore.all().find { it.alarmId == alarmId && it.instanceId == instanceId }
+        val storeCleared = runtimeStore.clearIfActive(alarmId, instanceId)
+        val serviceStopped = AlarmPlaybackService.stopForInstance(alarmId, instanceId)
+        if (serviceStopped || storeCleared) {
+            notificationManager().cancel(owned?.notificationId ?: AlarmIdentity.notificationId(instanceId))
+            finishRingingUi(instanceId)
+        }
+        return serviceStopped || storeCleared
+    }
 
-    @Query("SELECT * FROM alarms ORDER BY hour, minute")
-    suspend fun getAllAlarmsSync(): List<Alarm>
+    suspend fun activate(
+        alarmId: Long,
+        instanceId: String,
+        scheduledAt: Long,
+        isSnooze: Boolean
+    ): Boolean = activationMutex.withLock {
+        if (!isValidInstance(alarmId, instanceId, scheduledAt, isSnooze)) return@withLock false
+        if (!runtimeStore.isActive(alarmId, instanceId)) return@withLock false
 
-    @Query("SELECT * FROM alarms WHERE id = :id")
-    suspend fun getAlarmById(id: Long): Alarm?
+        val triggeredAt = System.currentTimeMillis()
+        val activated = database.withTransaction {
+            val alarm = database.alarmDao().getAlarmById(alarmId) ?: return@withTransaction false
+            val existing = database.alarmInstanceDao().getById(instanceId)
+            // A dismissal tombstone (early tap) or any terminal state blocks activation.
+            if (existing != null && existing.state != AlarmInstance.RINGING) return@withTransaction false
+            if (!isSnooze && !alarm.isEnabled && existing?.state != AlarmInstance.RINGING) {
+                return@withTransaction false
+            }
 
-    @Query("SELECT * FROM alarms WHERE id = :id")
-    fun getAlarmByIdSync(id: Long): Alarm?
+            database.alarmInstanceDao().insertIfAbsent(
+                AlarmInstance(
+                    instanceId = instanceId,
+                    alarmId = alarmId,
+                    scheduledTimestamp = scheduledAt,
+                    state = AlarmInstance.RINGING,
+                    triggeredAt = triggeredAt,
+                    isSnooze = isSnooze
+                )
+            )
+            val instance = database.alarmInstanceDao().getById(instanceId)
+            if (instance?.state != AlarmInstance.RINGING) return@withTransaction false
 
-    @Query("SELECT * FROM alarms WHERE isRinging = 1 LIMIT 1")
-    suspend fun getRingingAlarm(): Alarm?
+            // Simultaneous alarms keep independent rows, playback sessions and notifications.
+            // Never dismiss or supersede another alarm to make room for this one.
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAlarm(alarm: Alarm): Long
+            if (isSnooze) {
+                database.alarmInstanceDao().completeSnooze(alarmId, scheduledAt)
+            } else if (!alarm.isRepeating) {
+                database.alarmDao().setAlarmEnabled(alarmId, false)
+            }
+            database.alarmDao().setAlarmRinging(alarmId, true)
+            true
+        }
+        if (!activated || !runtimeStore.isActive(alarmId, instanceId)) return@withLock false
 
-    @Update
-    suspend fun updateAlarm(alarm: Alarm)
+        val alarm = database.alarmDao().getAlarmById(alarmId) ?: return@withLock false
+        if (!isSnooze) {
+            if (alarm.isRepeating) {
+                if (!alarmScheduler.scheduleAlarm(alarm)) {
+                    Log.e(TAG, "Could not preserve the next occurrence for recurring alarm $alarmId")
+                }
+            } else {
+                alarmScheduler.cancelRegularAlarm(alarmId)
+            }
+        }
+        true
+    }
 
-    @Delete
-    suspend fun deleteAlarm(alarm: Alarm)
+    /**
+     * Idempotent, database-authoritative dismissal.
+     *
+     * - Stops playback synchronously before any suspension so a tap never waits on disk.
+     * - If the instance row is still ringing/snoozed, transitions it to dismissed.
+     * - If the row does not exist yet (tap arrived before activation committed), writes a
+     *   DISMISSED tombstone so the pending activation refuses to start audio.
+     * - Repeated or stale taps change nothing and create no duplicate history.
+     */
+    suspend fun dismiss(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean): Boolean {
+        if (!isValidInstance(alarmId, instanceId, scheduledAt, isSnooze)) return false
+        val hadRuntimeOwnership = isActive(alarmId, instanceId)
+        stopImmediately(alarmId, instanceId)
+        return dismissalMutex.withLock { dismissLocked(alarmId, instanceId, scheduledAt, isSnooze, hadRuntimeOwnership) }
+    }
 
-    @Query("DELETE FROM alarm_instances WHERE alarmId = :alarmId AND state = 'snoozed'")
-    suspend fun removePendingSnoozes(alarmId: Long)
+    private suspend fun dismissLocked(
+        alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean, hadRuntimeOwnership: Boolean
+    ): Boolean {
+        val now = System.currentTimeMillis()
+        val changed = database.withTransaction {
+            val existing = database.alarmInstanceDao().getById(instanceId)
+            val tombstoneInserted = if (existing == null) {
+                // Only the notification/service mirror can prove an uncommitted firing is real.
+                // Arbitrary expired broadcasts must not manufacture alarm history.
+                if (!hadRuntimeOwnership) return@withTransaction false
+                database.alarmInstanceDao().insertIfAbsent(
+                    AlarmInstance(
+                        instanceId = instanceId,
+                        alarmId = alarmId,
+                        scheduledTimestamp = scheduledAt,
+                        state = AlarmInstance.DISMISSED,
+                        dismissedAt = now,
+                        triggeredAt = now,
+                        isSnooze = isSnooze
+                    )
+                ) != -1L
+            } else false
+            if (existing != null && (existing.alarmId != alarmId || existing.state !in setOf(AlarmInstance.RINGING, AlarmInstance.SNOOZED))) {
+                return@withTransaction false
+            }
+            val rows = database.alarmInstanceDao().dismissActiveInstance(instanceId, alarmId, now)
+            if (rows == 0 && !tombstoneInserted) return@withTransaction false
 
-    @Query("DELETE FROM alarms WHERE id = :id")
-    suspend fun deleteAlarmById(id: Long)
+            database.alarmDao().setAlarmRinging(alarmId, database.alarmInstanceDao().getRingingForAlarm(alarmId) != null)
+            val alarm = database.alarmDao().getAlarmById(alarmId)
+            if (!isSnooze && alarm != null && !alarm.isRepeating) {
+                database.alarmDao().setAlarmEnabled(alarmId, false)
+            }
+            database.alarmHistoryDao().insertHistory(
+                AlarmHistory(
+                    alarmId = alarmId,
+                    alarmLabel = alarm?.label.orEmpty(),
+                    scheduledTime = scheduledAt,
+                    actualTime = now,
+                    action = "dismissed"
+                )
+            )
+            true
+        }
+        if (changed) {
+            if (isSnooze) alarmScheduler.cancelSnooze(alarmId)
+            val alarm = database.alarmDao().getAlarmById(alarmId)
+            if (alarm?.isEnabled == false) alarmScheduler.cancelRegularAlarm(alarmId)
+            notificationManager().cancel(AlarmIdentity.notificationId(instanceId))
+            finishRingingUi(instanceId)
+        }
+        return changed
+    }
 
-    @Query("UPDATE alarms SET isEnabled = :enabled, updatedAt = :timestamp WHERE id = :id")
-    suspend fun setAlarmEnabled(id: Long, enabled: Boolean, timestamp: Long = System.currentTimeMillis())
+    suspend fun snooze(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean): Boolean =
+        snoozeMutex.withLock { snoozeLocked(alarmId, instanceId, scheduledAt, isSnooze) }
 
-    @Query("UPDATE alarms SET isRinging = :ringing WHERE id = :id")
-    suspend fun setAlarmRinging(id: Long, ringing: Boolean)
+    private suspend fun snoozeLocked(
+        alarmId: Long,
+        instanceId: String,
+        scheduledAt: Long,
+        isSnooze: Boolean
+    ): Boolean {
+        if (!isValidInstance(alarmId, instanceId, scheduledAt, isSnooze)) return false
+        if (!runtimeStore.isActive(alarmId, instanceId)) return false
+        val instance = database.alarmInstanceDao().getById(instanceId) ?: return false
+        if (instance.alarmId != alarmId || instance.state != AlarmInstance.RINGING) return false
+        val alarm = database.alarmDao().getAlarmById(alarmId) ?: return false
+        val now = System.currentTimeMillis()
+        val snoozedUntil = now + alarm.snoozeMinutes.coerceAtLeast(1) * 60_000L
 
-    @Query("SELECT COUNT(*) FROM alarms WHERE isEnabled = 1")
-    suspend fun getEnabledAlarmCount(): Int
+        if (!alarmScheduler.scheduleSnooze(alarm, snoozedUntil)) {
+            Log.e(TAG, "Could not schedule snooze for alarm $alarmId")
+            return false
+        }
 
-    @Query("UPDATE alarms SET isRinging = 0")
-    suspend fun clearRingingFlags()
+        val changed = try {
+            database.withTransaction {
+                val rows = database.alarmInstanceDao().snoozeIfRinging(instanceId, alarmId, snoozedUntil)
+                if (rows == 0) return@withTransaction false
+                database.alarmDao().setAlarmRinging(alarmId, database.alarmInstanceDao().getRingingForAlarm(alarmId) != null)
+                database.alarmHistoryDao().insertHistory(
+                    AlarmHistory(
+                        alarmId = alarmId,
+                        alarmLabel = alarm.label,
+                        scheduledTime = scheduledAt,
+                        actualTime = now,
+                        action = "snoozed",
+                        snoozeCount = 1
+                    )
+                )
+                true
+            }
+        } catch (exception: Exception) {
+            alarmScheduler.cancelSnooze(alarmId)
+            throw exception
+        }
+        if (!changed) {
+            alarmScheduler.cancelSnooze(alarmId)
+        } else {
+            // Playback stops only after the snooze is durably scheduled and recorded.
+            stopImmediately(alarmId, instanceId)
+        }
+        return changed
+    }
+
+    suspend fun recoverAfterBoot() {
+        val ringing = database.alarmInstanceDao().getRingingInstances()
+        runtimeStore.clear()
+        ringing.forEach { notificationManager().cancel(AlarmIdentity.notificationId(it.instanceId)) }
+        notificationManager().cancel(AlarmPlaybackService.NOTIFICATION_ID)
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            database.alarmInstanceDao().interruptRingingInstances()
+            database.alarmDao().clearRingingFlags()
+            ringing.forEach { instance ->
+                database.alarmHistoryDao().insertHistory(AlarmHistory(
+                    alarmId = instance.alarmId,
+                    alarmLabel = database.alarmDao().getAlarmById(instance.alarmId)?.label.orEmpty(),
+                    scheduledTime = instance.scheduledTimestamp, actualTime = null,
+                    action = "missed", timestamp = now
+                ))
+            }
+        }
+        // rescheduleSchedules restores pending snoozes exactly once.
+        rescheduleSchedules()
+    }
+
+    /** Re-register definitions after an OEM/process kill without destroying a tappable alarm instance. */
+    suspend fun reconcileOnAppStart() {
+        // A missing service singleton is not proof of dismissal: the process may have been recreated
+        // by this very tap. Keep instance identity until dismiss/boot recovery resolves it.
+        rescheduleSchedules()
+    }
+
+    suspend fun rescheduleSchedules() {
+        val alarms = database.alarmDao().getAllAlarmsSync()
+        alarms.forEach { alarm ->
+            if (alarm.isEnabled) alarmScheduler.scheduleAlarm(alarm) else alarmScheduler.cancelAlarm(alarm.id)
+        }
+
+        val now = System.currentTimeMillis()
+        database.alarmInstanceDao().getPendingSnoozes().forEach { instance ->
+            val alarm = database.alarmDao().getAlarmById(instance.alarmId) ?: return@forEach
+            val due = maxOf(instance.snoozedUntil ?: now, now + 5_000L)
+            if (alarmScheduler.scheduleSnooze(alarm, due)) {
+                database.alarmInstanceDao().updateSnoozeDue(instance.instanceId, due)
+            } else {
+                Log.e(TAG, "Could not restore snooze for alarm ${alarm.id}")
+            }
+        }
+    }
+
+    /** Explicit user deletion removes only this definition's pending platform operations. */
+    suspend fun forgetDeletedAlarm(alarmId: Long) {
+        alarmScheduler.cancelAlarm(alarmId)
+        database.alarmInstanceDao().removePendingSnoozes(alarmId)
+        database.alarmInstanceDao().getRingingInstances().filter { it.alarmId == alarmId }.forEach {
+            dismiss(alarmId, it.instanceId, it.scheduledTimestamp, it.isSnooze)
+        }
+        runtimeStore.all().filter { it.alarmId == alarmId }.forEach {
+            stopImmediately(alarmId, it.instanceId)
+            notificationManager().cancel(it.notificationId)
+        }
+    }
+
+    private fun isValidInstance(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean): Boolean =
+        AlarmIdentity.matches(alarmId, instanceId, scheduledAt, isSnooze)
+
+    private fun finishRingingUi(instanceId: String) {
+        context.sendBroadcast(android.content.Intent(ACTION_INSTANCE_FINISHED).setPackage(context.packageName)
+            .putExtra(AlarmScheduler.EXTRA_INSTANCE_ID, instanceId))
+    }
+
+    private fun notificationManager(): NotificationManager =
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    companion object {
+        private const val TAG = "AlarmRuntimeController"
+        const val ACTION_INSTANCE_FINISHED = "com.chronos.action.INSTANCE_FINISHED"
+    }
 }
-
-@Dao
-interface AlarmInstanceDao {
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertIfAbsent(instance: AlarmInstance): Long
-
-    @Query("SELECT * FROM alarm_instances WHERE instanceId = :instanceId LIMIT 1")
-    suspend fun getById(instanceId: String): AlarmInstance?
-
-    @Query("SELECT * FROM alarm_instances WHERE state = 'ringing' ORDER BY triggeredAt DESC LIMIT 1")
-    suspend fun getActiveRinging(): AlarmInstance?
-
-    @Query("SELECT * FROM alarm_instances WHERE state = 'ringing' ORDER BY triggeredAt DESC")
-    suspend fun getRingingInstances(): List<AlarmInstance>
-
-    @Query("SELECT * FROM alarm_instances WHERE alarmId = :alarmId AND state = 'ringing' LIMIT 1")
-    suspend fun getRingingForAlarm(alarmId: Long): AlarmInstance?
-
-    @Query("SELECT * FROM alarm_instances WHERE state = 'snoozed' AND snoozedUntil IS NOT NULL")
-    suspend fun getPendingSnoozes(): List<AlarmInstance>
-
-    @Query("UPDATE alarm_instances SET state = 'dismissed', dismissedAt = :dismissedAt WHERE instanceId = :instanceId AND alarmId = :alarmId AND state IN ('ringing', 'snoozed')")
-    suspend fun dismissActiveInstance(instanceId: String, alarmId: Long, dismissedAt: Long): Int
-
-    @Query("UPDATE alarm_instances SET state = 'snoozed', snoozedUntil = :snoozedUntil WHERE instanceId = :instanceId AND alarmId = :alarmId AND state = 'ringing'")
-    suspend fun snoozeIfRinging(instanceId: String, alarmId: Long, snoozedUntil: Long): Int
-
-    @Query("UPDATE alarm_instances SET state = 'completed' WHERE alarmId = :alarmId AND state = 'snoozed' AND snoozedUntil = :triggeredAt")
-    suspend fun completeSnooze(alarmId: Long, triggeredAt: Long): Int
-
-    @Query("UPDATE alarm_instances SET snoozedUntil = :snoozedUntil WHERE instanceId = :instanceId AND state = 'snoozed'")
-    suspend fun updateSnoozeDue(instanceId: String, snoozedUntil: Long): Int
-
-    @Query("UPDATE alarm_instances SET state = 'interrupted' WHERE state = 'ringing'")
-    suspend fun interruptRingingInstances(): Int
-
-    @Query("UPDATE alarm_instances SET state = 'superseded' WHERE instanceId = :instanceId AND state = 'ringing'")
-    suspend fun supersede(instanceId: String): Int
-}
-
-@Dao
-interface CalendarEventDao {
-
-    @Query("SELECT * FROM calendar_events ORDER BY startTime ASC")
-    fun getAllEvents(): Flow<List<CalendarEvent>>
-
-    @Query("SELECT * FROM calendar_events WHERE startTime >= :from AND startTime <= :to ORDER BY startTime ASC")
-    fun getEventsBetween(from: Long, to: Long): Flow<List<CalendarEvent>>
-
-    @Query("SELECT * FROM calendar_events WHERE endTime >= :from ORDER BY startTime ASC LIMIT 10")
-    suspend fun getUpcomingSnapshot(from: Long): List<CalendarEvent>
-
-    @Query("SELECT * FROM calendar_events WHERE startTime >= :from ORDER BY startTime ASC LIMIT 10")
-    fun getUpcomingEvents(from: Long): Flow<List<CalendarEvent>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(events: List<CalendarEvent>)
-
-    @Query("DELETE FROM calendar_events WHERE lastSynced < :before")
-    suspend fun deleteStale(before: Long)
-
-    @Query("DELETE FROM calendar_events")
-    suspend fun deleteAll()
-}
-
-@Dao
-interface ReminderDao {
-
-    @Query("SELECT * FROM reminders ORDER BY scheduledTime ASC")
-    fun getAllReminders(): Flow<List<Reminder>>
-
-    @Query("SELECT * FROM reminders WHERE isCompleted = 0 ORDER BY scheduledTime ASC")
-    fun getActiveReminders(): Flow<List<Reminder>>
-
-    @Query("SELECT * FROM reminders")
-    suspend fun getAllRemindersSnapshot(): List<Reminder>
-
-    @Query("SELECT * FROM reminders WHERE id = :id")
-    suspend fun getReminderById(id: Long): Reminder?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertReminder(reminder: Reminder): Long
-
-    @Update
-    suspend fun updateReminder(reminder: Reminder)
-
-    @Delete
-    suspend fun deleteReminder(reminder: Reminder)
-
-    @Query("UPDATE reminders SET isCompleted = 1, completedAt = :timestamp WHERE id = :id")
-    suspend fun markCompleted(id: Long, timestamp: Long = System.currentTimeMillis())
-}
-
-@Dao
-interface TimerDao {
-
-    @Query("SELECT * FROM timers ORDER BY createdAt DESC")
-    fun getAllTimers(): Flow<List<Timer>>
-
-    @Query("SELECT * FROM timers")
-    suspend fun getAllTimersSnapshot(): List<Timer>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTimer(timer: Timer): Long
-
-    @Update
-    suspend fun updateTimer(timer: Timer)
-
-    @Delete
-    suspend fun deleteTimer(timer: Timer)
-}
-
-@Dao
-interface StopwatchLapDao {
-
-    @Query("SELECT * FROM stopwatch_laps WHERE sessionId = :sessionId ORDER BY lapNumber ASC")
-    fun getLapsForSession(sessionId: Long): Flow<List<StopwatchLap>>
-
-    @Insert
-    suspend fun insertLap(lap: StopwatchLap): Long
-
-    @Query("DELETE FROM stopwatch_laps WHERE sessionId = :sessionId")
-    suspend fun deleteLapsForSession(sessionId: Long)
-}
-
-@Dao
-interface WorldClockDao {
-
-    @Query("SELECT * FROM world_clocks ORDER BY sortOrder ASC")
-    fun getAllWorldClocks(): Flow<List<WorldClock>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertWorldClock(worldClock: WorldClock): Long
-
-    @Delete
-    suspend fun deleteWorldClock(worldClock: WorldClock)
-}
-
-@Dao
-interface FocusSessionDao {
-
-    @Query("SELECT * FROM focus_sessions ORDER BY startedAt DESC")
-    fun getAllSessions(): Flow<List<FocusSession>>
-
-    @Query("SELECT * FROM focus_sessions WHERE startedAt >= :since ORDER BY startedAt DESC")
-    fun getSessionsSince(since: Long): Flow<List<FocusSession>>
-
-    @Query("SELECT * FROM focus_sessions WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
-    suspend fun getActiveSession(): FocusSession?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSession(session: FocusSession): Long
-
-    @Update
-    suspend fun updateSession(session: FocusSession)
-}
-
-@Dao
-interface AlarmHistoryDao {
-
-    @Query("SELECT * FROM alarm_history ORDER BY timestamp DESC LIMIT 50")
-    fun getRecentHistory(): Flow<List<AlarmHistory>>
-
-    @Query("SELECT * FROM alarm_history WHERE timestamp >= :since ORDER BY timestamp DESC")
-    fun getHistorySince(since: Long): Flow<List<AlarmHistory>>
-
-    @Query("SELECT * FROM alarm_history WHERE action = 'missed' ORDER BY timestamp DESC")
-    fun getMissedAlarms(): Flow<List<AlarmHistory>>
-
-    @Insert
-    suspend fun insertHistory(entry: AlarmHistory): Long
-
-    @Query("DELETE FROM alarm_history WHERE timestamp < :before")
-    suspend fun deleteOlderThan(before: Long)
-}
-
-
-@Dao
-interface RoutineDao {
-    @Query("SELECT * FROM routines ORDER BY hour, minute") fun observeAll(): Flow<List<Routine>>
-    @Query("SELECT * FROM routines") suspend fun getAll(): List<Routine>
-    @Query("SELECT * FROM routines WHERE id = :id") suspend fun getById(id: Long): Routine?
-    @Insert suspend fun insert(routine: Routine): Long
-    @Update suspend fun update(routine: Routine)
-    @Query("DELETE FROM routines WHERE id = :id") suspend fun delete(id: Long)
-}
-

@@ -58,7 +58,8 @@ class AlarmPlaybackService : Service() {
         val alarmId: Long,
         val instanceId: String,
         val notification: Notification,
-        val vibrate: Boolean
+        val vibrate: Boolean,
+        val notificationId: Int
     ) {
         @Volatile var active = true
         @Volatile var player: MediaPlayer? = null
@@ -94,17 +95,21 @@ class AlarmPlaybackService : Service() {
             stopSelf()
             return
         }
-        if (sessions.containsKey(instanceId)) return
+        val existing = sessions[instanceId]
+        if (existing != null) {
+            if (existing.alarmId == alarmId) return
+            stopSession(instanceId)
+        }
         val notification = buildAlarmNotification(alarmId, instanceId, scheduledAt, isSnooze,
             intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_LABEL).orEmpty(),
             intent.getIntExtra(AlarmScheduler.EXTRA_ALARM_HOUR, 0),
             intent.getIntExtra(AlarmScheduler.EXTRA_ALARM_MINUTE, 0),
             intent.getIntExtra(AlarmScheduler.EXTRA_ALARM_SNOOZE_MINUTES, 5).coerceAtLeast(1))
+        val notificationId = AlarmIdentity.availableNotificationId(instanceId, sessions.values.map { it.notificationId }.toSet())
         val session = PlaybackSession(alarmId, instanceId, notification,
-            intent.getBooleanExtra(AlarmScheduler.EXTRA_ALARM_VIBRATE, true))
+            intent.getBooleanExtra(AlarmScheduler.EXTRA_ALARM_VIBRATE, true), notificationId)
         sessions[instanceId] = session
-        runtimeStore.activate(alarmId, instanceId, scheduledAt, isSnooze)
-        val notificationId = AlarmIdentity.notificationId(instanceId)
+        runtimeStore.activate(alarmId, instanceId, scheduledAt, isSnooze, notificationId)
         // Promote before any database/media work to satisfy the FGS startup contract.
         if (foregroundInstance == null) {
             foregroundInstance = instanceId
@@ -242,7 +247,7 @@ class AlarmPlaybackService : Service() {
                 val next = sessions.values.firstOrNull { it.active }
                 if (next != null) {
                     foregroundInstance = next.instanceId
-                    ServiceCompat.startForeground(this, AlarmIdentity.notificationId(next.instanceId), next.notification,
+                    ServiceCompat.startForeground(this, next.notificationId, next.notification,
                         if (Build.VERSION.SDK_INT >= 29) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
                 } else {
                     foregroundInstance = null
@@ -250,7 +255,7 @@ class AlarmPlaybackService : Service() {
                     stopSelf()
                 }
             }
-            manager.cancel(AlarmIdentity.notificationId(instanceId))
+            manager.cancel(session.notificationId)
             sendBroadcast(Intent(AlarmRuntimeController.ACTION_INSTANCE_FINISHED).setPackage(packageName).putExtra(AlarmScheduler.EXTRA_INSTANCE_ID, instanceId))
         }
     }

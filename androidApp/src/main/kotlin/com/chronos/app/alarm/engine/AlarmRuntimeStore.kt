@@ -13,13 +13,14 @@ class AlarmRuntimeStore @Inject constructor(@ApplicationContext context: Context
         val instanceId: String,
         val scheduledAt: Long,
         val isSnooze: Boolean,
-        val activatedAt: Long = 0L
+        val activatedAt: Long = 0L,
+        val notificationId: Int = AlarmIdentity.notificationId(instanceId)
     )
 
     private val preferences = context.getSharedPreferences("chronos_alarm_runtime", Context.MODE_PRIVATE)
 
     @Synchronized
-    fun activate(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean) {
+    fun activate(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean, notificationId: Int = AlarmIdentity.notificationId(instanceId)) {
         val ids = preferences.getStringSet(KEY_ACTIVE_IDS, emptySet())!!.toMutableSet()
         ids.add(instanceId)
         preferences.edit()
@@ -28,6 +29,7 @@ class AlarmRuntimeStore @Inject constructor(@ApplicationContext context: Context
             .putLong(key(instanceId, "scheduled"), scheduledAt)
             .putBoolean(key(instanceId, "snooze"), isSnooze)
             .putLong(key(instanceId, "activated"), System.currentTimeMillis())
+            .putInt(key(instanceId, "notification"), notificationId)
             .commit()
     }
 
@@ -44,7 +46,8 @@ class AlarmRuntimeStore @Inject constructor(@ApplicationContext context: Context
                 null
             } else ActiveAlarm(
                 alarmId, id, scheduledAt, preferences.getBoolean(key(id, "snooze"), false),
-                preferences.getLong(key(id, "activated"), 0L)
+                preferences.getLong(key(id, "activated"), 0L),
+                preferences.getInt(key(id, "notification"), AlarmIdentity.notificationId(id))
             )
         }
     }
@@ -59,7 +62,7 @@ class AlarmRuntimeStore @Inject constructor(@ApplicationContext context: Context
         if (!isActive(alarmId, instanceId)) return false
         val ids = preferences.getStringSet(KEY_ACTIVE_IDS, emptySet())!!.toMutableSet().apply { remove(instanceId) }
         preferences.edit().remove(key(instanceId, "alarm")).remove(key(instanceId, "scheduled"))
-            .remove(key(instanceId, "snooze")).remove(key(instanceId, "activated"))
+            .remove(key(instanceId, "snooze")).remove(key(instanceId, "activated")).remove(key(instanceId, "notification"))
             .putStringSet(KEY_ACTIVE_IDS, ids).commit()
         return true
     }

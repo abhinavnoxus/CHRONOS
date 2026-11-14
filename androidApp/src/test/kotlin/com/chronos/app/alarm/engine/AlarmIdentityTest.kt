@@ -24,4 +24,9 @@ class AlarmIdentityTest {
         assertEquals(AlarmIdentity.notificationId(id), AlarmIdentity.notificationId(id))
         assertTrue(AlarmIdentity.notificationId(id) > 0)
     }
+    @Test fun notificationHashCollisionDoesNotOverwriteLiveAlarm() {
+        val first = AlarmIdentity.notificationId("first")
+        assertEquals(first + 1, AlarmIdentity.availableNotificationId("second", setOf(first)))
+        assertEquals(1, AlarmIdentity.availableNotificationId("third", setOf(Int.MAX_VALUE)))
+    }
 }
