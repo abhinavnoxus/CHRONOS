@@ -64,7 +64,7 @@ class FocusEngineTest {
 
     @Test fun rebootFallsBackToWallDeadline() = runTest {
         engine.start("Work", 5, 1, 5, 2)
-        clock.boot = 2; clock.elapsed = 10L; clock.wall += 6 * 60_000L
+        clock.boot = 2; clock.elapsed = 10L; clock.wall += 13 * 60_000L
         engine.reconcile(clock.wall, clock.elapsed, clock.boot)
         val runtime = settings.focusRuntime.first()
         assertEquals(2, runtime.completedFocusSessions)

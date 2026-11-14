@@ -43,7 +43,7 @@ class CalendarSyncManager @Inject constructor(
         val events = mutableListOf<CalendarEvent>()
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .appendPath(dayStart.toString()).appendPath(windowEnd.toString()).build()
-        val cursor: Cursor? = context.contentResolver.query(uri, projection, null, null, "startDay ASC, begin ASC")
+        val cursor: Cursor? = context.contentResolver.query(uri, projection, null, null, "${CalendarContract.Instances.BEGIN} ASC")
         cursor?.use { result ->
             val id = result.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)
             val calendarId = result.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID)

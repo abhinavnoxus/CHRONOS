@@ -22,7 +22,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -71,7 +71,7 @@ private val bottomItems = listOf(
 fun ChronosNavHost(navController: NavHostController = rememberNavController()) {
     val palette = LocalChronosPalette.current
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val preferences by settingsViewModel.preferences.collectAsState()
+    val preferences by settingsViewModel.preferences.collectAsStateWithLifecycle()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
     val context = LocalContext.current
