@@ -34,10 +34,10 @@ jobs:
         if: failure()
         run: |
           if [[ -f "$RUNNER_TEMP/device-gradle.log" ]]; then
-            details="$(grep -nE '(^e: |error:|FAILED|FAILURES!!!|Tests run:|Exception|What went wrong|Execution failed)' "$RUNNER_TEMP/device-gradle.log" | tail -n 80 || true)"
+            details="$(grep -nE -A 15 '(^e: |error:|FAILED|FAILURES!!!|Tests run:|Exception|What went wrong|Execution failed)' "$RUNNER_TEMP/device-gradle.log" | tail -n 80 || true)"
             echo "::error title=Device test failure (base64)::$(printf '%s' "$details" | base64 -w0)"
           fi
-          failures="$(grep -Rh -A 12 '<failure' androidApp/build/outputs/androidTest-results/connected/*.xml 2>/dev/null | head -n 150 || true)"
+          failures="$(find androidApp/build/outputs/androidTest-results -name '*.xml' -exec grep -H -A 20 '<failure' {} + 2>/dev/null | head -n 150 || true)"
           if [[ -n "$failures" ]]; then echo "::error title=Device test assertions (base64)::$(printf '%s' "$failures" | base64 -w0)"; fi
       - uses: actions/upload-artifact@v7
         if: always()
