@@ -99,6 +99,7 @@
         </receiver>
 
         <receiver android:name=".reminders.ReminderReceiver" android:exported="false" />
+        <receiver android:name=".clock.TimerReceiver" android:exported="false" />
 
         <!-- ═══════════════════════════════════════════════════════
              ALARM PLAYBACK SERVICE (Foreground)

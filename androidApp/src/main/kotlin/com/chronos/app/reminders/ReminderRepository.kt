@@ -11,7 +11,8 @@ import javax.inject.Singleton
 @Singleton
 class ReminderRepository @Inject constructor(
     private val database: ChronosDatabase,
-    private val scheduler: ReminderScheduler
+    private val scheduler: ReminderScheduler,
+    private val timerScheduler: com.chronos.app.clock.TimerScheduler
 ) {
     val reminders: Flow<List<Reminder>> = database.reminderDao().getAllReminders()
     val routines: Flow<List<Routine>> = database.routineDao().observeAll()
@@ -56,6 +57,7 @@ class ReminderRepository @Inject constructor(
     suspend fun reconcile() {
         database.reminderDao().getAllRemindersSnapshot().forEach { scheduler.schedule(it) }
         database.routineDao().getAll().forEach(::scheduleRoutine)
+        database.timerDao().getAllTimersSnapshot().forEach { timerScheduler.schedule(it) }
     }
 
     private fun scheduleRoutine(routine: Routine) {

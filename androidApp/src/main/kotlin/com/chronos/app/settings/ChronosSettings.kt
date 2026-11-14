@@ -85,7 +85,7 @@ class ChronosSettings @Inject constructor(
         val defaultFocusMinutes = intPreferencesKey("default_focus_minutes")
         val defaultBreakMinutes = intPreferencesKey("default_break_minutes")
         val defaultLongBreakMinutes = intPreferencesKey("default_long_break_minutes")
-        val sessionsBeforeLongBreak = intPreferencesKey("sessions_before_long_break")
+        val defaultRounds = intPreferencesKey("sessions_before_long_break")
         val useWallpaperColors = booleanPreferencesKey("use_wallpaper_colors")
         val dashboardOrder = stringPreferencesKey("dashboard_order")
         val focusActive = booleanPreferencesKey("focus_active")
@@ -115,7 +115,7 @@ class ChronosSettings @Inject constructor(
             focusMinutes = values[Keys.focusMinutes] ?: 25,
             breakMinutes = values[Keys.breakMinutes] ?: 5,
             longBreakMinutes = values[Keys.longBreakMinutes] ?: 15,
-            sessionsBeforeLongBreak = values[Keys.sessionsBeforeLongBreak] ?: 4,
+            sessionsBeforeLongBreak = values[Keys.defaultRounds] ?: 4,
             completedFocusSessions = values[Keys.completedFocusSessions] ?: 0,
             totalFocusMillis = values[Keys.totalFocusMillis] ?: 0L,
             sessionStartedAt = values[Keys.focusSessionStartedAt] ?: 0L,
@@ -136,7 +136,7 @@ class ChronosSettings @Inject constructor(
             values[Keys.focusMinutes] = runtime.focusMinutes
             values[Keys.breakMinutes] = runtime.breakMinutes
             values[Keys.longBreakMinutes] = runtime.longBreakMinutes
-            values[Keys.sessionsBeforeLongBreak] = runtime.sessionsBeforeLongBreak
+            values[Keys.defaultRounds] = runtime.sessionsBeforeLongBreak
             values[Keys.completedFocusSessions] = runtime.completedFocusSessions
             values[Keys.totalFocusMillis] = runtime.totalFocusMillis
             values[Keys.focusSessionStartedAt] = runtime.sessionStartedAt
@@ -204,7 +204,7 @@ class ChronosSettings @Inject constructor(
             defaultFocusMinutes = (values[Keys.defaultFocusMinutes] ?: 25).coerceIn(5, 180),
             defaultBreakMinutes = (values[Keys.defaultBreakMinutes] ?: 5).coerceIn(1, 30),
             defaultLongBreakMinutes = (values[Keys.defaultLongBreakMinutes] ?: 15).coerceIn(5, 60),
-            sessionsBeforeLongBreak = (values[Keys.sessionsBeforeLongBreak] ?: 4).coerceIn(2, 8)
+            sessionsBeforeLongBreak = (values[Keys.defaultRounds] ?: 4).coerceIn(2, 8)
         )
     }
 
@@ -225,7 +225,7 @@ class ChronosSettings @Inject constructor(
         it[Keys.defaultFocusMinutes] = focus.coerceIn(5, 180)
         it[Keys.defaultBreakMinutes] = shortBreak.coerceIn(1, 30)
         it[Keys.defaultLongBreakMinutes] = longBreak.coerceIn(5, 60)
-        it[Keys.sessionsBeforeLongBreak] = rounds.coerceIn(2, 8)
+        it[Keys.defaultRounds] = rounds.coerceIn(2, 8)
     }
 
     // Kept for forward-compatible dashboard customization; no current card is hidden by default.

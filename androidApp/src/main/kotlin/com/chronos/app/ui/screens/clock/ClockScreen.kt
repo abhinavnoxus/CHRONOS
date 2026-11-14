@@ -25,7 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,13 +60,14 @@ import kotlin.math.sin
 @Composable
 fun ClockScreen(
     onNavigate: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenTools: () -> Unit = {}
 ) {
     val palette = LocalChronosPalette.current
     val clockViewModel: ClockViewModel = hiltViewModel()
-    val preferences by clockViewModel.preferences.collectAsState()
+    val preferences by clockViewModel.preferences.collectAsStateWithLifecycle()
     val alarmViewModel: AlarmViewModel = hiltViewModel()
-    val enabledAlarms by alarmViewModel.enabledAlarms.collectAsState()
+    val enabledAlarms by alarmViewModel.enabledAlarms.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -97,6 +98,11 @@ fun ClockScreen(
             }
         }
         item { ClockHero(preferences) }
+        item {
+            androidx.compose.material3.TextButton(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
+                Text("Timers · Stopwatch · World clock")
+            }
+        }
         item { NextAlarmCard(alarms = enabledAlarms, is24Hour = preferences.is24Hour, onOpenAlarms = { onNavigate("alarms") }) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

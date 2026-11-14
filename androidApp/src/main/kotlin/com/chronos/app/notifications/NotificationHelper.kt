@@ -27,6 +27,8 @@ class NotificationHelper @Inject constructor(
         const val CHANNEL_REMINDER = "chronos_reminder_channel"
         const val CHANNEL_SUGGESTION = "chronos_suggestion_channel"
         const val CHANNEL_MISSED = "chronos_missed_channel"
+        const val CHANNEL_TIMER = "chronos_timer_channel"
+        const val CHANNEL_FOCUS = "chronos_focus_channel"
 
         private const val REMINDER_NOTIFICATION_BASE = 20000
         private const val SUGGESTION_NOTIFICATION_BASE = 30000
@@ -50,6 +52,13 @@ class NotificationHelper @Inject constructor(
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Calendar-aware alarm suggestions"
+            },
+            NotificationChannel(CHANNEL_TIMER, "Countdown timers", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Countdown completion alerts"
+            },
+            NotificationChannel(CHANNEL_FOCUS, "Focus sessions", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Focus and break phase transitions"
+                setSound(null, null)
             },
             NotificationChannel(
                 CHANNEL_MISSED,

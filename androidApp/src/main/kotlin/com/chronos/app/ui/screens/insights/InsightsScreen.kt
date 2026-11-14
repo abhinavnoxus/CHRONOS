@@ -19,7 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -45,8 +45,8 @@ private data class DailyFocus(val start: Long, val label: String, val minutes: I
 fun InsightsScreen() {
     val palette = LocalChronosPalette.current
     val viewModel: InsightsViewModel = hiltViewModel()
-    val sessions by viewModel.focusSessions.collectAsState()
-    val alarmHistory by viewModel.alarmHistory.collectAsState()
+    val sessions by viewModel.focusSessions.collectAsStateWithLifecycle()
+    val alarmHistory by viewModel.alarmHistory.collectAsStateWithLifecycle()
     val now = remember { System.currentTimeMillis() }
     val weekStart = remember(now) {
         Calendar.getInstance().apply {

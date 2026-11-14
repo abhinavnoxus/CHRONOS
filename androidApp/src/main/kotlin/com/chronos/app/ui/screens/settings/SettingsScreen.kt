@@ -167,7 +167,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     settingsViewModel.setFocusDefaults(preferences.defaultFocusMinutes, preferences.defaultBreakMinutes, it.toInt(), preferences.sessionsBeforeLongBreak)
                 }
                 SettingLabel("Intervals before a long break")
-                ChoiceRow(listOf(2, 3, 4, 6).map { it.toString() to it }, preferences.sessionsBeforeLongBreak.toString()) {
+                ChoiceRow(listOf(2, 3, 4, 6).map { it.toString() to "$it rounds" }, preferences.sessionsBeforeLongBreak.toString()) {
                     settingsViewModel.setFocusDefaults(preferences.defaultFocusMinutes, preferences.defaultBreakMinutes, preferences.defaultLongBreakMinutes, it.toInt())
                 }
             }

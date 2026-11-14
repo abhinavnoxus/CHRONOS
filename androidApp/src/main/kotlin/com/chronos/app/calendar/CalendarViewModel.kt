@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.room.withTransaction
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,7 +38,7 @@ class CalendarViewModel @Inject constructor(
             _error.value = null
             try {
                 val fetched = withContext(Dispatchers.IO) { calendarSyncManager.fetchUpcomingEvents() }
-                androidx.room.withTransaction(database) {
+                database.withTransaction {
                     calendarEventDao.deleteAll()
                     if (fetched.isNotEmpty()) calendarEventDao.insertAll(fetched)
                 }
@@ -53,6 +54,8 @@ class CalendarViewModel @Inject constructor(
             }
         }
     }
+
+    fun detectConflicts(events: List<CalendarEvent>) = calendarSyncManager.detectConflicts(events)
 
     fun clearError() { _error.value = null }
 

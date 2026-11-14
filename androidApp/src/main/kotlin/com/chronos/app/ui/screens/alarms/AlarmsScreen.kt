@@ -52,7 +52,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -85,9 +85,9 @@ fun AlarmsScreen() {
     val palette = LocalChronosPalette.current
     val viewModel: AlarmViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val preferences by settingsViewModel.preferences.collectAsState()
-    val alarms by viewModel.alarms.collectAsState()
-    val error by viewModel.errorMessage.collectAsState()
+    val preferences by settingsViewModel.preferences.collectAsStateWithLifecycle()
+    val alarms by viewModel.alarms.collectAsStateWithLifecycle()
+    val error by viewModel.errorMessage.collectAsStateWithLifecycle()
     var editTarget by remember { mutableStateOf<Alarm?>(null) }
     var isCreating by remember { mutableStateOf(false) }
     var resumeCount by remember { mutableIntStateOf(0) }

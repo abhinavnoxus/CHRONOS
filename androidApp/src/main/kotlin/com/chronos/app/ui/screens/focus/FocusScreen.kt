@@ -26,7 +26,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,7 +55,7 @@ import kotlinx.coroutines.delay
 fun FocusScreen() {
     val palette = LocalChronosPalette.current
     val viewModel: FocusViewModel = hiltViewModel()
-    val runtime by viewModel.runtime.collectAsState()
+    val runtime by viewModel.runtime.collectAsStateWithLifecycle()
     var selectedMinutes by remember { mutableIntStateOf(25) }
     var label by remember { mutableStateOf("Deep work") }
     var tick by remember { mutableIntStateOf(0) }

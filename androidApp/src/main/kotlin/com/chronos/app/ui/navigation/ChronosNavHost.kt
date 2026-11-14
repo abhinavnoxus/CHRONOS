@@ -41,9 +41,10 @@ import com.chronos.app.theme.LocalChronosPalette
 import com.chronos.app.theme.chronosMotionDuration
 import com.chronos.app.ui.screens.alarms.AlarmsScreen
 import com.chronos.app.ui.screens.clock.ClockScreen
+import com.chronos.app.ui.screens.clock.TimeToolsScreen
 import com.chronos.app.ui.screens.focus.FocusScreen
 import com.chronos.app.ui.screens.insights.InsightsScreen
-import com.chronos.app.ui.screens.schedule.ScheduleScreen
+import com.chronos.app.ui.screens.plan.PlanScreen
 import com.chronos.app.ui.screens.settings.SettingsScreen
 
 private data class Destination(val route: String, val title: String, val icon: ImageVector)
@@ -55,6 +56,7 @@ private object Routes {
     const val FOCUS = "focus"
     const val INSIGHTS = "insights"
     const val SETTINGS = "settings"
+    const val TOOLS = "tools"
 }
 
 private val bottomItems = listOf(
@@ -82,7 +84,7 @@ fun ChronosNavHost(navController: NavHostController = rememberNavController()) {
     Scaffold(
         containerColor = palette.backgroundPrimary,
         bottomBar = {
-            if (currentDestination?.route != Routes.SETTINGS) {
+            if (currentDestination?.route !in setOf(Routes.SETTINGS, Routes.TOOLS)) {
                 NavigationBar(containerColor = palette.backgroundSecondary) {
                     bottomItems.forEach { destination ->
                         val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
@@ -133,14 +135,18 @@ fun ChronosNavHost(navController: NavHostController = rememberNavController()) {
             ) {
                 ClockScreen(
                     onNavigate = { route -> navigateOnce(navController, route) },
-                    onOpenSettings = { navigateOnce(navController, Routes.SETTINGS) }
+                    onOpenSettings = { navigateOnce(navController, Routes.SETTINGS) },
+                    onOpenTools = { navigateOnce(navController, Routes.TOOLS) }
                 )
             }
-            composable(Routes.PLAN) { ScheduleScreen() }
+            composable(Routes.PLAN, deepLinks = listOf(navDeepLink { uriPattern = "chronos://app/plan" })) { PlanScreen() }
             composable(Routes.ALARMS) { AlarmsScreen() }
             composable(Routes.FOCUS) { FocusScreen() }
             composable(Routes.INSIGHTS) { InsightsScreen() }
             composable(Routes.SETTINGS) { SettingsScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.TOOLS, deepLinks = listOf(navDeepLink { uriPattern = "chronos://app/tools" })) {
+                TimeToolsScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

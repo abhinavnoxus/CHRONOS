@@ -33,7 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,10 +68,10 @@ fun ScheduleScreen() {
     val palette = LocalChronosPalette.current
     val viewModel: CalendarViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val preferences by settingsViewModel.preferences.collectAsState()
-    val events by viewModel.events.collectAsState()
-    val loading by viewModel.isLoading.collectAsState()
-    val error by viewModel.error.collectAsState()
+    val preferences by settingsViewModel.preferences.collectAsStateWithLifecycle()
+    val events by viewModel.events.collectAsStateWithLifecycle()
+    val loading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
     var resumeCount by remember { mutableIntStateOf(0) }
     var askedForPermission by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -106,7 +106,7 @@ fun ScheduleScreen() {
     val todayEvents = remember(events, todayStart) {
         events.filter { it.startTime < todayEnd && it.endTime >= todayStart }
     }
-    val conflicts = remember(todayEvents) { CalendarSyncManager(context).detectConflicts(todayEvents) }
+    val conflicts = remember(todayEvents) { viewModel.detectConflicts(todayEvents) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),

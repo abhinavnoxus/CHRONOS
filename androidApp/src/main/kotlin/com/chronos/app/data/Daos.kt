@@ -148,6 +148,9 @@ interface TimerDao {
     @Query("SELECT * FROM timers ORDER BY createdAt DESC")
     fun getAllTimers(): Flow<List<Timer>>
 
+    @Query("SELECT * FROM timers")
+    suspend fun getAllTimersSnapshot(): List<Timer>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTimer(timer: Timer): Long
 
