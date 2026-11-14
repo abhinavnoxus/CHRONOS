@@ -1,11 +1,12 @@
 package com.chronos.app.alarm.receiver
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
-import com.chronos.app.alarm.engine.AlarmScheduler
-import com.chronos.app.data.ChronosDatabase
+import com.chronos.app.alarm.engine.AlarmRuntimeController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,49 +14,36 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Handles device boot, app update, timezone change, and manual clock change.
- * Reschedules all enabled alarms to ensure they survive restarts.
- */
+/** Reconciles AlarmManager with the database after reboot, update, time or timezone changes. */
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
-
-    @Inject lateinit var alarmScheduler: AlarmScheduler
-    @Inject lateinit var database: ChronosDatabase
-
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-    companion object {
-        private const val TAG = "BootReceiver"
-    }
+    @Inject lateinit var runtimeController: AlarmRuntimeController
 
     override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action
-        Log.i(TAG, "Received action: $action")
+        val action = intent.action ?: return
+        val isDeviceStart = action == Intent.ACTION_BOOT_COMPLETED ||
+            action == Intent.ACTION_MY_PACKAGE_REPLACED
+        val isExactPermissionChange = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+        val shouldReconcile = isDeviceStart || isExactPermissionChange ||
+            action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED
+        if (!shouldReconcile) return
 
-        when (action) {
-            Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_LOCKED_BOOT_COMPLETED,
-            Intent.ACTION_MY_PACKAGE_REPLACED,
-            Intent.ACTION_TIME_CHANGED,
-            Intent.ACTION_TIMEZONE_CHANGED -> {
-                rescheduleAllAlarms()
-            }
-        }
-    }
-
-    private fun rescheduleAllAlarms() {
         val pendingResult = goAsync()
-        scope.launch {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val alarms = database.alarmDao().getEnabledAlarmsSync()
-                alarmScheduler.rescheduleAllAlarms(alarms)
-                Log.i(TAG, "Rescheduled ${alarms.size} alarms after boot/timezone change")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error rescheduling alarms", e)
+                if (isDeviceStart) runtimeController.recoverAfterBoot()
+                else runtimeController.rescheduleSchedules()
+                Log.i(TAG, "Alarm schedules reconciled after $action")
+            } catch (exception: Exception) {
+                Log.e(TAG, "Alarm recovery failed after $action", exception)
             } finally {
                 pendingResult.finish()
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "BootReceiver"
     }
 }

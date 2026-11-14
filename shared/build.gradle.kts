@@ -65,7 +65,7 @@ android {
     namespace = "com.chronos.shared"
     compileSdk = 34
     defaultConfig {
-        minSdk = 31
+        minSdk = 26
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

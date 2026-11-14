@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
@@ -11,23 +12,10 @@ import com.chronos.app.alarm.receiver.AlarmTriggerReceiver
 import com.chronos.app.data.model.Alarm
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Calendar
-import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * CHRONOS Alarm Scheduler
- *
- * Handles exact alarm scheduling using AlarmManager.
- * Supports:
- * - One-time alarms
- * - Recurring daily alarms (specific days of week)
- * - Reboot recovery
- * - Timezone changes
- * - DST transitions
- *
- * Uses SCHEDULE_EXACT_ALARM permission on Android 12+.
- */
+/** AlarmManager adapter. The database remains the authority for alarm definitions. */
 @Singleton
 class AlarmScheduler @Inject constructor(
     @ApplicationContext private val context: Context
@@ -44,201 +32,183 @@ class AlarmScheduler @Inject constructor(
         const val EXTRA_ALARM_SNOOZE_MINUTES = "extra_alarm_snooze_minutes"
         const val EXTRA_ALARM_GRADUAL_VOLUME = "extra_alarm_gradual_volume"
         const val EXTRA_ALARM_CHALLENGE_TYPE = "extra_alarm_challenge_type"
+        const val EXTRA_SCHEDULED_AT = "extra_scheduled_at"
+        const val EXTRA_INSTANCE_ID = "extra_alarm_instance_id"
+        const val EXTRA_IS_SNOOZE = "extra_is_snooze"
+        const val ACTION_TRIGGER_ALARM = "com.chronos.action.TRIGGER_ALARM"
 
-        // Base request code offset to avoid collisions with other PendingIntents
-        private const val REQUEST_CODE_BASE = 10000
+        fun generateRequestCode(alarmId: Long, salt: Int = 0): Int {
+            val folded = (alarmId xor (alarmId ushr 32)).toInt()
+            return (folded xor (salt * 0x45d9f3b)) and 0x7fffffff
+        }
+
+        fun instanceId(alarmId: Long, scheduledAt: Long, isSnooze: Boolean): String =
+            "$alarmId:${if (isSnooze) "snooze" else "alarm"}:$scheduledAt"
     }
 
     private val alarmManager: AlarmManager
         get() = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-    /**
-     * Schedule an alarm. Calculates the next trigger time and sets an exact alarm.
-     */
-    fun scheduleAlarm(alarm: Alarm) {
+    /** Returns true when AlarmManager accepted the request (exact or inexact fallback). */
+    fun scheduleAlarm(alarm: Alarm): Boolean {
         if (!alarm.isEnabled) {
             cancelAlarm(alarm.id)
-            return
+            return false
         }
-
-        val triggerTime = calculateNextTriggerTime(alarm)
-        if (triggerTime == null) {
-            Log.w(TAG, "No future trigger time for alarm ${alarm.id}, cancelling")
-            cancelAlarm(alarm.id)
-            return
+        val triggerAt = calculateNextTriggerTime(alarm) ?: run {
+            Log.w(TAG, "No future trigger time for alarm ${alarm.id}")
+            cancelRegularAlarm(alarm.id)
+            return false
         }
+        val operation = createTriggerPendingIntent(alarm, triggerAt, isSnooze = false)
 
-        val pendingIntent = createPendingIntent(alarm)
-
-        try {
+        return try {
             if (canScheduleExactAlarms()) {
                 alarmManager.setAlarmClock(
-                    AlarmManager.AlarmClockInfo(triggerTime, getShowAlarmPendingIntent()),
-                    pendingIntent
+                    AlarmManager.AlarmClockInfo(triggerAt, getShowAlarmPendingIntent()),
+                    operation
                 )
-                Log.i(TAG, "Scheduled alarm ${alarm.id} for ${java.util.Date(triggerTime)}")
             } else {
-                Log.w(TAG, "Cannot schedule exact alarms — permission not granted")
-                // Fall back to inexact alarm (less reliable)
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
+                Log.w(TAG, "Exact-alarm access is unavailable; scheduling an inexact fallback for ${alarm.id}")
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, operation)
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException scheduling alarm", e)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error scheduling alarm", e)
+            Log.i(TAG, "Scheduled alarm ${alarm.id} for ${Calendar.getInstance().apply { timeInMillis = triggerAt }.time}")
+            true
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Exact alarm access changed during scheduling; trying an inexact fallback", exception)
+            scheduleInexact(triggerAt, operation, alarm.id)
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Could not schedule alarm ${alarm.id}", exception)
+            false
         }
     }
 
-    /**
-     * Cancel a scheduled alarm.
-     */
+    /** A snooze has its own PendingIntent identity and cannot overwrite the recurring alarm. */
+    fun scheduleSnooze(alarm: Alarm, triggerAt: Long): Boolean {
+        if (triggerAt <= System.currentTimeMillis()) return false
+        val operation = createTriggerPendingIntent(alarm, triggerAt, isSnooze = true)
+        return try {
+            if (canScheduleExactAlarms()) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, operation)
+            } else {
+                Log.w(TAG, "Exact-alarm access is unavailable; scheduling snooze as inexact")
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, operation)
+            }
+            true
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Exact-alarm access changed during snooze scheduling; trying an inexact fallback", exception)
+            scheduleInexact(triggerAt, operation, alarm.id)
+        } catch (exception: RuntimeException) {
+            Log.e(TAG, "Could not schedule snooze for alarm ${alarm.id}", exception)
+            false
+        }
+    }
+
+    private fun scheduleInexact(triggerAt: Long, operation: PendingIntent, alarmId: Long): Boolean = try {
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, operation)
+        Log.i(TAG, "Scheduled inexact fallback for alarm $alarmId")
+        true
+    } catch (exception: RuntimeException) {
+        Log.e(TAG, "Could not schedule inexact fallback for alarm $alarmId", exception)
+        false
+    }
+
     fun cancelAlarm(alarmId: Long) {
-        val intent = Intent(context, AlarmTriggerReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            generateRequestCode(alarmId),
-            intent,
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-        )
-        pendingIntent?.let {
-            alarmManager.cancel(it)
-            it.cancel()
-            Log.i(TAG, "Cancelled alarm $alarmId")
-        }
+        cancelRegularAlarm(alarmId)
+        cancelSnooze(alarmId)
     }
 
-    /**
-     * Reschedule all enabled alarms (used after boot, timezone change, etc.)
-     */
+    fun cancelRegularAlarm(alarmId: Long) = cancelOperation(alarmId, isSnooze = false)
+
+    fun cancelSnooze(alarmId: Long) = cancelOperation(alarmId, isSnooze = true)
+
     fun rescheduleAllAlarms(alarms: List<Alarm>) {
-        Log.i(TAG, "Rescheduling ${alarms.size} alarms")
-        alarms.filter { it.isEnabled }.forEach { scheduleAlarm(it) }
+        Log.i(TAG, "Reconciling ${alarms.size} enabled alarm definitions")
+        alarms.forEach(::scheduleAlarm)
     }
 
-    /**
-     * Calculate the next trigger time for an alarm.
-     */
-    fun calculateNextTriggerTime(alarm: Alarm): Long? {
-        val now = System.currentTimeMillis()
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, alarm.hour)
-            set(Calendar.MINUTE, alarm.minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
+    fun calculateNextTriggerTime(alarm: Alarm): Long? = AlarmTimeCalculator.calculateNextTriggerTime(alarm)
 
-        // If it's a one-time alarm on a specific date
-        if (alarm.oneTimeDate != null) {
-            val dateCal = Calendar.getInstance().apply {
-                timeInMillis = alarm.oneTimeDate
-                set(Calendar.HOUR_OF_DAY, alarm.hour)
-                set(Calendar.MINUTE, alarm.minute)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            return if (dateCal.timeInMillis > now) dateCal.timeInMillis else null
-        }
+    fun canScheduleExactAlarms(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
-        // Recurring alarm
-        if (alarm.isRepeating) {
-            return calculateNextRepeatingTrigger(alarm, calendar, now)
+    fun getExactAlarmSettingsIntent(): Intent? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        return Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
-        // One-time alarm (next occurrence)
-        if (calendar.timeInMillis <= now) {
-            calendar.add(Calendar.DAY_OF_YEAR, 1)
-        }
-
-        return if (calendar.timeInMillis > now) calendar.timeInMillis else null
     }
 
-    private fun calculateNextRepeatingTrigger(
+    private fun cancelOperation(alarmId: Long, isSnooze: Boolean) {
+        val pendingIntent = createTriggerPendingIntent(
+            alarm = null,
+            alarmId = alarmId,
+            triggerAt = 0L,
+            isSnooze = isSnooze,
+            flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        ) ?: return
+        alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
+    }
+
+    private fun createTriggerPendingIntent(
         alarm: Alarm,
-        calendar: Calendar,
-        now: Long
-    ): Long? {
-        // Check next 8 days to find the next valid trigger
-        for (dayOffset in 0..7) {
-            val candidate = calendar.clone() as Calendar
-            candidate.add(Calendar.DAY_OF_YEAR, dayOffset)
+        triggerAt: Long,
+        isSnooze: Boolean
+    ): PendingIntent = createTriggerPendingIntent(
+        alarm = alarm,
+        alarmId = alarm.id,
+        triggerAt = triggerAt,
+        isSnooze = isSnooze,
+        flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )!!
 
-            val dayOfWeek = candidate.get(Calendar.DAY_OF_WEEK)
-            // Convert Calendar.SUNDAY=1..SATURDAY=7 to our 1=Mon..7=Sun
-            val ourDayOfWeek = when (dayOfWeek) {
-                Calendar.SUNDAY -> 7
-                else -> dayOfWeek - 1
-            }
-
-            if (alarm.isDayEnabled(ourDayOfWeek)) {
-                val triggerTime = candidate.timeInMillis
-                if (triggerTime > now) {
-                    // Check exception dates
-                    if (!alarm.exceptionDates.contains(candidate.timeInMillis / 86400000 * 86400000)) {
-                        return triggerTime
-                    }
-                }
-            }
-        }
-
-        return null
-    }
-
-    private fun createPendingIntent(alarm: Alarm): PendingIntent {
+    private fun createTriggerPendingIntent(
+        alarm: Alarm?,
+        alarmId: Long,
+        triggerAt: Long,
+        isSnooze: Boolean,
+        flags: Int
+    ): PendingIntent? {
+        val kind = if (isSnooze) "snooze" else "regular"
         val intent = Intent(context, AlarmTriggerReceiver::class.java).apply {
-            putExtra(EXTRA_ALARM_ID, alarm.id)
-            putExtra(EXTRA_ALARM_LABEL, alarm.label)
-            putExtra(EXTRA_ALARM_HOUR, alarm.hour)
-            putExtra(EXTRA_ALARM_MINUTE, alarm.minute)
-            putExtra(EXTRA_ALARM_RINGTONE, alarm.ringtoneUri)
-            putExtra(EXTRA_ALARM_VOLUME, alarm.volume)
-            putExtra(EXTRA_ALARM_VIBRATE, alarm.vibrate)
-            putExtra(EXTRA_ALARM_SNOOZE_MINUTES, alarm.snoozeMinutes)
-            putExtra(EXTRA_ALARM_GRADUAL_VOLUME, alarm.gradualVolume)
-            putExtra(EXTRA_ALARM_CHALLENGE_TYPE, alarm.challengeType)
+            action = ACTION_TRIGGER_ALARM
+            data = Uri.parse("chronos://alarm/$alarmId/$kind")
+            putExtra(EXTRA_ALARM_ID, alarmId)
+            putExtra(EXTRA_SCHEDULED_AT, triggerAt)
+            putExtra(EXTRA_INSTANCE_ID, instanceId(alarmId, triggerAt, isSnooze))
+            putExtra(EXTRA_IS_SNOOZE, isSnooze)
+            alarm?.let {
+                putExtra(EXTRA_ALARM_LABEL, it.label)
+                putExtra(EXTRA_ALARM_HOUR, it.hour)
+                putExtra(EXTRA_ALARM_MINUTE, it.minute)
+                putExtra(EXTRA_ALARM_RINGTONE, it.ringtoneUri)
+                putExtra(EXTRA_ALARM_VOLUME, it.volume)
+                putExtra(EXTRA_ALARM_VIBRATE, it.vibrate)
+                putExtra(EXTRA_ALARM_SNOOZE_MINUTES, it.snoozeMinutes)
+                putExtra(EXTRA_ALARM_GRADUAL_VOLUME, it.gradualVolume)
+                putExtra(EXTRA_ALARM_CHALLENGE_TYPE, it.challengeType)
+            }
         }
-
-        return PendingIntent.getBroadcast(
-            context,
-            generateRequestCode(alarm.id),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val requestCode = generateRequestCode(alarmId, if (isSnooze) 2 else 1)
+        return if (flags and PendingIntent.FLAG_NO_CREATE != 0) {
+            PendingIntent.getBroadcast(context, requestCode, intent, flags)
+        } else {
+            PendingIntent.getBroadcast(context, requestCode, intent, flags)
+        }
     }
 
     private fun getShowAlarmPendingIntent(): PendingIntent {
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-            ?: Intent()
+        val intent = Intent(context, com.chronos.app.ui.MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
         return PendingIntent.getActivity(
             context,
             0,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    fun canScheduleExactAlarms(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            alarmManager.canScheduleExactAlarms()
-        } else {
-            true
-        }
-    }
-
-    fun getExactAlarmSettingsIntent(): Intent? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
-        } else {
-            null
-        }
-    }
-
-    companion object {
-        fun generateRequestCode(alarmId: Long): Int {
-            return REQUEST_CODE_BASE + alarmId.toInt()
-        }
     }
 }

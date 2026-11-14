@@ -1,199 +1,89 @@
-# CHRONOS — Premium Time Management for Android
+# CHRONOS V3 — Personal Time Operating System (Android)
 
-> **Your time. Your schedule. Your control.**
+CHRONOS is being upgraded into a premium, offline-first Android time dashboard built with Kotlin and Jetpack Compose. This branch focuses first on the reusable Luxury Adaptive Glass design system and reliable alarm lifecycle. It is a V3 foundation, not a claim that every module in the full product specification is complete.
 
-CHRONOS is a luxury time-management Android application combining a premium clock, smart calendar integration, intelligent alarms, and a personal command centre — all wrapped in a cinematic "Luxury Adaptive Glass" design language.
+## What's in this branch
 
----
+- Five primary destinations: Home, Plan, Alarms, Focus, and Insights; Settings is available from Home.
+- Shared semantic theme tokens, persisted theme/accent/glass/motion preferences, clock format controls, reusable glass surfaces, and reduced-effects styling.
+- Home clock with digital/analog/hybrid faces, local date/time, next-alarm information, and working navigation shortcuts.
+- Room-backed alarm list with create, edit, repeat weekdays, enable/disable, delete, system alarm tone, vibration, and snooze-duration controls.
+- Alarm runtime state separated from the screen lifecycle. Notification content taps and Stop actions use the same explicit, instance-checked dismissal receiver; snooze uses its own AlarmManager PendingIntent so it does not replace the recurring alarm.
+- Reboot/time/timezone/permission reconciliation and a non-destructive Room 1→2 migration that adds per-firing alarm-instance state.
+- Read-only device calendar screen with a runtime permission explanation, real provider data, loading/error/empty states, and conflict counts.
+- Focus/break timer whose deadline is persisted locally and recalculated after backgrounding or process recreation; recorded sessions feed Insights.
+- Insights use recorded focus sessions and alarm history only. Calendar time is not reported as actual time spent.
+- Android 8.0+ install target (`minSdk 26`), including Android 10/11 devices such as the Realme Narzo 20 Pro.
 
-## 🏗 Architecture
+See [the initial audit](docs/CHRONOS_V3_AUDIT.md) for existing-project findings and constraints.
 
-```
-CHRONOS/
-├── androidApp/           # Android application module
-│   └── src/main/
-│       ├── kotlin/com/chronos/app/
-│       │   ├── alarm/          # Alarm engine (scheduler, receivers, service, UI)
-│       │   ├── calendar/       # Google Calendar integration
-│       │   ├── clock/          # Clock, timer, stopwatch logic
-│       │   ├── common/         # Shared utilities
-│       │   ├── data/           # Room database, DAOs, models
-│       │   ├── di/             # Hilt dependency injection
-│       │   ├── notifications/  # Notification management
-│       │   ├── settings/       # DataStore preferences
-│       │   ├── theme/          # Luxury Glass design system
-│       │   └── ui/             # Compose UI screens & components
-│       ├── res/                # Android resources
-│       └── AndroidManifest.xml
-├── shared/               # Kotlin Multiplatform module
-│   └── src/
-│       ├── commonMain/   # Shared models & interfaces
-│       ├── androidMain/  # Android-specific implementations
-│       └── iosMain/      # iOS-specific implementations (future)
-├── build.gradle.kts
-├── settings.gradle.kts
-└── README.md
-```
+## Download and install on a Narzo 20 Pro
 
-## ⚙️ Tech Stack
+The lowest-complexity path is the APK artifact produced by GitHub Actions; Android Studio is not required on the phone.
 
-| Layer | Technology |
-|-------|-----------|
-| **Language** | Kotlin 1.9 |
-| **Platform** | Kotlin Multiplatform (Android + iOS-ready) |
-| **UI** | Jetpack Compose + Material 3 |
-| **Architecture** | MVVM + Clean Architecture |
-| **DI** | Hilt (Dagger) |
-| **Database** | Room |
-| **Preferences** | DataStore |
-| **Scheduling** | AlarmManager (exact) + WorkManager (backup) |
-| **Navigation** | Jetpack Navigation Compose |
-| **Min SDK** | 31 (Android 12) |
-| **Target SDK** | 34 |
+1. Open the repository on GitHub and select **Actions**.
+2. Open the newest successful **Build CHRONOS V3 APK** run on this branch.
+3. Download the **CHRONOS-V3-APK** artifact and unzip it.
+4. On the phone, open the APK using Files/Chrome and approve **Install unknown apps** for that source when Android asks.
+5. Launch **CHRONOS**. Allow notifications and exact-alarm access when prompted/needed. On Realme UI, if alarms are delayed, review CHRONOS's auto-launch/background activity and battery settings; those controls differ across Realme UI versions.
 
----
+The workflow is configured to produce a debug-signed APK with the package suffix `.debug`, so it can be installed beside another CHRONOS package. It is a separate app: it does **not** read or migrate data from an existing unsuffixed CHRONOS installation. Keep the existing app installed if its alarms or settings matter. This is a sideload/test build, not a Play Store release; a successful workflow run is still required before an APK is available.
 
-## 🔧 Key Features
+## Build locally
 
-### 1. Premium Alarm Engine ⭐
-- **Exact alarm scheduling** using `AlarmManager.setAlarmClock()`
-- **Reliable notification dismissal** — the critical V2 fix
-- Foreground service for guaranteed audio playback
-- Gradual volume increase (30-second ramp)
-- Lock-screen full-screen alarm UI with swipe-to-dismiss
-- Snooze with configurable duration
-- Recurring alarms (daily, weekdays, weekends, custom)
-- Boot recovery — alarms reschedule after device restart
-- Timezone and DST transition handling
-- Alarm history (dismissed, snoozed, missed)
+Requirements: JDK 17, Android SDK Platform 34/build tools 34, and internet access for Gradle dependencies.
 
-### 2. Smart Calendar Integration
-- Google Calendar sync (read-only)
-- Today's timeline view
-- Gap detection between events
-- Conflict / overlap detection
-- Smart alarm suggestions (requires user approval)
-- Upcoming event previews
-
-### 3. Clock Module
-- Digital clock with seconds
-- Analog clock face (canvas-rendered)
-- World clocks
-- Multiple concurrent timers
-- Stopwatch with lap tracking
-- 12h/24h format toggle
-
-### 4. Reminders
-- One-time and recurring reminders
-- Priority categories
-- Completion tracking
-- Snooze and reschedule
-
-### 5. Focus Sessions (Pomodoro)
-- Configurable focus/break durations
-- Session history and statistics
-- Long break after N sessions
-
-### 6. Luxury Adaptive Glass UI
-- **Three glass styles:** Luxury, Smoked, Frosted
-- Champagne gold accent system
-- Dark / Light / Adaptive themes
-- Wallpaper-based colour extraction
-- Cinematic animations (respects reduced-motion)
-- Consistent spacing, typography, and hierarchy
-
----
-
-## 🚨 Critical Bug Fix: Alarm Notification Dismissal
-
-### Problem (V1)
-Tapping the alarm notification did NOT stop the alarm. Audio continued playing in the background while the UI appeared dismissed.
-
-### Root Cause
-The notification's `contentIntent` opened the main activity instead of routing through the alarm service. There was no central authority for the "ringing" state.
-
-### Solution (V2)
-- **Single source of truth:** `AlarmPlaybackService` is the only component that controls alarm state
-- **All dismiss paths converge:** Notification tap → `AlarmRingingActivity` → `service.dismissAlarm()`
-- **Direct action buttons:** "Stop" and "Snooze" notification actions go through `AlarmDismissReceiver` / `AlarmSnoozeReceiver` → service
-- **`setDeleteIntent`:** Even swiping the notification away triggers dismissal
-- **Atomic cleanup:** Audio stop → vibration stop → notification remove → DB update → service stop (all in sequence)
-- **Idempotent:** Calling dismiss multiple times is safe
-
----
-
-## 📦 Building
-
-### Prerequisites
-- Android Studio Hedgehog (2023.1.1) or later
-- JDK 17+
-- Android SDK 34
-
-### Build Commands
 ```bash
-# Debug build
+# Debug APK (installable, debug application ID)
 ./gradlew :androidApp:assembleDebug
 
-# Release build
-./gradlew :androidApp:assembleRelease
+# Unit tests
+./gradlew :androidApp:testDebugUnitTest
 
-# Run tests
-./gradlew test
-./gradlew connectedAndroidTest
-
-# Install on device
+# Install to a connected Android device with USB debugging enabled
 ./gradlew :androidApp:installDebug
 ```
 
----
+The APK output is `androidApp/build/outputs/apk/debug/androidApp-debug.apk`.
 
-## 📱 Permissions
+## Android permissions
 
 | Permission | Purpose |
-|-----------|---------|
-| `SCHEDULE_EXACT_ALARM` | Precise alarm scheduling |
-| `USE_EXACT_ALARM` | Alternative exact alarm permission |
-| `WAKE_LOCK` | Keep CPU awake during alarm |
-| `VIBRATE` | Haptic alarm feedback |
-| `RECEIVE_BOOT_COMPLETED` | Reschedule alarms after reboot |
-| `POST_NOTIFICATIONS` | Show alarm notifications |
-| `USE_FULL_SCREEN_INTENT` | Lock-screen alarm UI |
-| `FOREGROUND_SERVICE` | Alarm playback service |
-| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Audio playback service type |
-| `READ_CALENDAR` | Google Calendar integration |
+| --- | --- |
+| `SCHEDULE_EXACT_ALARM` | Exact alarm scheduling on supported Android versions; users can review access in Alarm Guard. |
+| `POST_NOTIFICATIONS` | Visible alarm notification and notification controls on Android 13+. |
+| `USE_FULL_SCREEN_INTENT` | Full-screen ringing interface when Android allows it. A notification remains the fallback. |
+| `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Active alarm audio playback. |
+| `RECEIVE_BOOT_COMPLETED` | Restore stored alarm schedules after a device restart. |
+| `WAKE_LOCK` / `VIBRATE` | Alarm playback and vibration. |
+| `READ_CALENDAR` | Optional, read-only device calendar access from Plan. |
 
----
+Alarm delivery is still subject to Android permission, notification-channel, and manufacturer battery policies. CHRONOS does not claim an operating-system guarantee when access is denied or restricted.
 
-## 🧪 Testing
+## Current implementation status
 
-The project includes test coverage for:
-- Alarm creation, editing, deletion
-- Alarm notification dismissal (the critical fix)
-- Snooze functionality
-- Recurring alarm scheduling
-- Boot recovery
-- Timezone change handling
-- Database persistence
-- UI navigation
-- Theme persistence
+### Implemented in this branch (not device-verified here)
 
----
+- Shared design tokens and a persistent theme/preferences foundation.
+- Real Room-backed alarm CRUD and scheduler paths.
+- Persistent alarm-instance identity, idempotent notification dismissal, separate snooze scheduling, and reboot/system-change recovery paths.
+- Read-only calendar permission/data states.
+- Persistent focus timer state and recorded focus-session summaries.
+- Real-data Insights summaries and five-section navigation.
+- Room migration and CI APK artifact workflow.
 
-## 📋 Roadmap
+### Not completed in this branch
 
-- [x] V2 Architecture & Alarm Engine
-- [x] Luxury Glass UI System
-- [x] Navigation & Core Screens
-- [ ] Google Calendar integration (implementation)
-- [ ] Reminder engine implementation
-- [ ] Focus session implementation
-- [ ] Widget support
-- [ ] iOS target (via KMP shared module)
-- [ ] Backup & restore
-- [ ] Accessibility audit
+- Automated end-to-end alarm tests (including foreground/background/locked-screen/reboot/OEM cases), notification audio/vibration device verification, and hardware Alarm Guard diagnostics beyond the exact-alarm/notification status shown in UI.
+- Reminders and their notification scheduler; sleep/routines; world clock; multi-timer; stopwatch; widgets; dashboard rearrangement; profile management; AI assistant; custom audio import; calendar recurrence-instance expansion; calendar day/week/month/agenda editing; backup/export; accessibility/performance profiling and release certification.
+- The full analytics suite and extensive UI/instrumentation tests from the V3 specification.
 
----
+The Focus timer preserves its deadline and session state, but this branch does not yet issue background phase-completion notifications or suppress other apps' notifications.
 
-## 📄 Licence
+## Tests and verification
 
-Proprietary — CHRONOS © 2026
+JUnit regression tests for the pure alarm-time calculator are included. The Android build and tests have **not** been executed in this workspace because JDK/Java and Android SDK are not installed here. The automated GitHub workflow is configured to build an APK on pushes to `main` and `arena/**`; only a successful Actions run confirms the CI build. No on-device performance, notification, audio, vibration, reboot, or OEM test result is claimed.
+
+## Data and repository history
+
+The existing Room database name and entities are retained. Schema upgrades use an explicit migration rather than destructive fallback. Git history has not been rewritten; this V3 work remains on the active Arena branch and does not replace the repository's default branch directly.

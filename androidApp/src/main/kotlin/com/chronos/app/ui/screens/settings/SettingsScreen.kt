@@ -1,242 +1,255 @@
 package com.chronos.app.ui.screens.settings
 
-import androidx.compose.foundation.layout.*
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.chronos.app.theme.ChronosColors
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.chronos.app.alarm.AlarmViewModel
+import com.chronos.app.alarm.service.AlarmPlaybackService
+import com.chronos.app.settings.SettingsViewModel
+import com.chronos.app.theme.LocalChronosPalette
 import com.chronos.app.ui.components.GlassCard
-import com.chronos.app.ui.components.GlassDivider
 import com.chronos.app.ui.components.GlassStyle
 
-data class SettingsCategory(
-    val title: String,
-    val icon: ImageVector,
-    val items: List<SettingsItem>
+private data class AccentChoice(val title: String, val argb: Long)
+private val accentChoices = listOf(
+    AccentChoice("Champagne", 0xFFC6A36BL),
+    AccentChoice("Silver", 0xFFA9BDD1L),
+    AccentChoice("Sage", 0xFF85AE99L),
+    AccentChoice("Rose", 0xFFC98C92L)
 )
 
-data class SettingsItem(
-    val title: String,
-    val subtitle: String = "",
-    val type: SettingsItemType = SettingsItemType.NAVIGATION,
-    val booleanValue: Boolean = false
-)
-
-enum class SettingsItemType {
-    NAVIGATION, TOGGLE, SELECTION
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
-    val categories = remember {
-        listOf(
-            SettingsCategory(
-                "Appearance",
-                Icons.Default.Palette,
-                listOf(
-                    SettingsItem("Theme", "Dark mode", SettingsItemType.SELECTION),
-                    SettingsItem("Glass Style", "Luxury Glass", SettingsItemType.SELECTION),
-                    SettingsItem("Accent Colour", "Champagne Gold", SettingsItemType.SELECTION),
-                    SettingsItem("Animation Intensity", "Full", SettingsItemType.SELECTION),
-                    SettingsItem("Wallpaper Colours", "Use adaptive colours", SettingsItemType.TOGGLE, true)
-                )
-            ),
-            SettingsCategory(
-                "Clock",
-                Icons.Default.Schedule,
-                listOf(
-                    SettingsItem("24-Hour Format", "", SettingsItemType.TOGGLE, true),
-                    SettingsItem("Show Seconds", "", SettingsItemType.TOGGLE, true),
-                    SettingsItem("Show Date", "", SettingsItemType.TOGGLE, true),
-                    SettingsItem("Clock Style", "Digital + Analog", SettingsItemType.SELECTION)
-                )
-            ),
-            SettingsCategory(
-                "Alarms",
-                Icons.Default.Alarm,
-                listOf(
-                    SettingsItem("Default Snooze", "5 minutes", SettingsItemType.SELECTION),
-                    SettingsItem("Gradual Volume", "Increase over 30 seconds", SettingsItemType.TOGGLE, true),
-                    SettingsItem("Default Vibration", "", SettingsItemType.TOGGLE, true),
-                    SettingsItem("Default Ringtone", "System default", SettingsItemType.SELECTION)
-                )
-            ),
-            SettingsCategory(
-                "Calendar",
-                Icons.Default.CalendarMonth,
-                listOf(
-                    SettingsItem("Connected Accounts", "1 Google account", SettingsItemType.NAVIGATION),
-                    SettingsItem("Smart Suggestions", "Suggest alarms before events", SettingsItemType.TOGGLE, true),
-                    SettingsItem("Conflict Detection", "Warn about overlaps", SettingsItemType.TOGGLE, true)
-                )
-            ),
-            SettingsCategory(
-                "Sound & Vibration",
-                Icons.Default.VolumeUp,
-                listOf(
-                    SettingsItem("Notification Sound", "Default", SettingsItemType.SELECTION),
-                    SettingsItem("Haptic Feedback", "", SettingsItemType.TOGGLE, true)
-                )
-            ),
-            SettingsCategory(
-                "Advanced",
-                Icons.Default.Tune,
-                listOf(
-                    SettingsItem("Battery Optimization", "Allow background activity", SettingsItemType.NAVIGATION),
-                    SettingsItem("Exact Alarms", "Permission granted", SettingsItemType.NAVIGATION),
-                    SettingsItem("Backup & Restore", "", SettingsItemType.NAVIGATION),
-                    SettingsItem("Diagnostics", "View logs", SettingsItemType.NAVIGATION)
-                )
-            ),
-            SettingsCategory(
-                "About",
-                Icons.Default.Info,
-                listOf(
-                    SettingsItem("CHRONOS", "Version 2.0.0", SettingsItemType.NAVIGATION),
-                    SettingsItem("Privacy Policy", "", SettingsItemType.NAVIGATION),
-                    SettingsItem("Open Source Licences", "", SettingsItemType.NAVIGATION)
-                )
-            )
-        )
+fun SettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val palette = LocalChronosPalette.current
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val alarmViewModel: AlarmViewModel = hiltViewModel()
+    val preferences by settingsViewModel.preferences.collectAsState()
+    var resumeCount by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeCount++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    val exactAllowed = remember(resumeCount) { alarmViewModel.canScheduleExact }
+    val notificationsAllowed = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.displaySmall,
-            color = ChronosColors.TextPrimary,
-            fontWeight = FontWeight.Light
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(categories.size) { catIndex ->
-                val category = categories[catIndex]
-
-                GlassCard(
-                    style = GlassStyle.LUXURY,
-                    modifier = Modifier.fillMaxWidth(),
-                    padding = 0.dp
-                ) {
-                    // Category header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = category.icon,
-                            contentDescription = null,
-                            tint = ChronosColors.ChampagneGold,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = category.title,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                letterSpacing = 2.sp,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = ChronosColors.ChampagneGold
-                        )
-                    }
-
-                    GlassDivider(modifier = Modifier.padding(horizontal = 20.dp))
-
-                    // Items
-                    category.items.forEachIndexed { index, item ->
-                        SettingsRow(item)
-                        if (index < category.items.size - 1) {
-                            GlassDivider(
-                                modifier = Modifier.padding(horizontal = 20.dp),
-                                color = ChronosColors.GlassBorder.copy(alpha = 0.5f)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
+                }
+                Column {
+                    Text("Personalize", style = MaterialTheme.typography.headlineMedium, color = palette.textPrimary)
+                    Text("A quieter, clearer view of time", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
                 }
             }
-
-            item { Spacer(modifier = Modifier.height(80.dp)) }
+        }
+        item {
+            SettingsSection(title = "Appearance", icon = Icons.Default.Palette) {
+                SettingLabel("Theme")
+                ChoiceRow(listOf("dark" to "Obsidian", "light" to "Ivory", "adaptive" to "Adaptive"), preferences.themeMode) {
+                    settingsViewModel.setThemeMode(it)
+                }
+                Spacer(Modifier.height(10.dp))
+                SettingLabel("Glass surface")
+                ChoiceRow(listOf("luxury" to "Luxury", "crystal" to "Crystal", "smoked" to "Smoked", "frosted" to "Frosted", "amoled" to "AMOLED"), preferences.glassStyle) {
+                    settingsViewModel.setGlassStyle(it)
+                }
+                Spacer(Modifier.height(10.dp))
+                SettingLabel("Accent colour")
+                ChoiceRow(accentChoices.map { it.argb.toString() to it.title }, preferences.accentArgb.toString()) { selected ->
+                    selected.toLongOrNull()?.let(settingsViewModel::setAccentArgb)
+                }
+            }
+        }
+        item {
+            SettingsSection(title = "Clock", icon = Icons.Default.Schedule) {
+                SettingToggle("24-hour time", "Use a 24-hour display", preferences.is24Hour, settingsViewModel::set24Hour)
+                SettingToggle("Show seconds", "Update the clock once per second", preferences.showSeconds, settingsViewModel::setShowSeconds)
+                SettingToggle("Show date", "Display today's date on Home", preferences.showDate, settingsViewModel::setShowDate)
+                Spacer(Modifier.height(8.dp))
+                SettingLabel("Clock face")
+                ChoiceRow(listOf("digital" to "Digital", "analog" to "Analog", "hybrid" to "Hybrid"), preferences.clockStyle) {
+                    settingsViewModel.setClockStyle(it)
+                }
+            }
+        }
+        item {
+            SettingsSection(title = "Motion & performance", icon = Icons.Default.Security) {
+                SettingLabel("Motion")
+                ChoiceRow(listOf("cinematic" to "Cinematic", "balanced" to "Balanced", "reduced" to "Reduced"), preferences.animationIntensity) {
+                    settingsViewModel.setAnimationIntensity(it)
+                }
+                Spacer(Modifier.height(10.dp))
+                SettingLabel("Visual effects")
+                ChoiceRow(listOf("full" to "Full", "balanced" to "Balanced", "saver" to "Saver"), preferences.performanceMode) {
+                    settingsViewModel.setPerformanceMode(it)
+                }
+            }
+        }
+        item {
+            SettingsSection(title = "Alarm Guard", icon = Icons.Default.Security) {
+                Text(
+                    text = when {
+                        !notificationsAllowed -> "Notifications are disabled. Ringing alarms still use system playback where allowed, but notification controls may not appear."
+                        !exactAllowed -> "Exact-alarm access is unavailable. Scheduled alarms may be delayed by Android."
+                        else -> "Exact-alarm access is available. Android power settings can still affect background delivery."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (exactAllowed && notificationsAllowed) palette.statusSuccess else palette.statusWarning
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !exactAllowed) {
+                        OutlinedButton(onClick = {
+                            alarmViewModel.getExactAlarmSettingsIntent()?.let { context.startActivity(it) }
+                        }) { Text("Exact alarms") }
+                    }
+                    OutlinedButton(onClick = {
+                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            putExtra(Settings.EXTRA_CHANNEL_ID, AlarmPlaybackService.NOTIFICATION_CHANNEL_ID)
+                        })
+                    }) { Text("Alarm channel") }
+                }
+                Text(
+                    text = "On Realme UI, allow CHRONOS to auto-launch and use background activity if alarms are delayed. These settings vary by OS version.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+        item {
+            SettingsSection(title = "About", icon = Icons.Default.Security) {
+                Text("CHRONOS 3.0", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+                Text("Personal time tools stored on this device.", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+            }
         }
     }
 }
 
 @Composable
-fun SettingsRow(item: SettingsItem) {
-    var toggled by remember { mutableStateOf(item.booleanValue) }
+private fun SettingsSection(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val palette = LocalChronosPalette.current
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        style = GlassStyle.LUXURY,
+        cornerRadius = 22.dp,
+        padding = 18.dp
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = palette.accentPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.size(10.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+        }
+        Spacer(Modifier.height(14.dp))
+        content()
+    }
+}
 
+@Composable
+private fun SettingLabel(text: String) {
+    val palette = LocalChronosPalette.current
+    Text(text, style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = palette.textTertiary)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChoiceRow(
+    choices: List<Pair<String, String>>,
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        choices.forEach { (value, label) ->
+            FilterChip(
+                selected = value == selected,
+                onClick = { onSelected(value) },
+                label = { Text(label) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingToggle(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val palette = LocalChronosPalette.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = ChronosColors.TextPrimary
-            )
-            if (item.subtitle.isNotEmpty()) {
-                Text(
-                    text = item.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = ChronosColors.TextSecondary
-                )
-            }
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = palette.textPrimary)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
         }
-
-        when (item.type) {
-            SettingsItemType.NAVIGATION -> {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = ChronosColors.TextTertiary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            SettingsItemType.TOGGLE -> {
-                Switch(
-                    checked = toggled,
-                    onCheckedChange = { toggled = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = ChronosColors.ChampagneGold,
-                        checkedTrackColor = ChronosColors.ChampagneGold.copy(alpha = 0.3f),
-                        uncheckedThumbColor = ChronosColors.TextTertiary,
-                        uncheckedTrackColor = ChronosColors.TextTertiary.copy(alpha = 0.2f)
-                    )
-                )
-            }
-            SettingsItemType.SELECTION -> {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = ChronosColors.TextTertiary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

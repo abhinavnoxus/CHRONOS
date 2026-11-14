@@ -1,52 +1,54 @@
-name: Build CHRONOS APK
+name: Build CHRONOS V3 APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'arena/**'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Assemble installable debug APK
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
+          distribution: temurin
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.5'
-
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Accept Android SDK licences
+        run: yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Build Debug APK
-        run: gradle :androidApp:assembleDebug --stacktrace --no-daemon
+      - name: Install Android SDK packages
+        run: sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'
 
-      - name: Upload APK as Artifact
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon :androidApp:testDebugUnitTest
+
+      - name: Build APK
+        run: ./gradlew --no-daemon :androidApp:assembleDebug
+
+      - name: Give APK a clear download name
+        run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk "CHRONOS-v${GITHUB_SHA::7}-debug.apk"
+
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: CHRONOS-V2-Debug-APK
-          path: androidApp/build/outputs/apk/debug/*.apk
+          name: CHRONOS-V3-APK
+          path: CHRONOS-*-debug.apk
+          if-no-files-found: error
           retention-days: 90
-
-      - name: Create Release with APK
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v2.0.0-${{ github.run_number }}
-          name: CHRONOS V2 Build ${{ github.run_number }}
-          files: androidApp/build/outputs/apk/debug/*.apk
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

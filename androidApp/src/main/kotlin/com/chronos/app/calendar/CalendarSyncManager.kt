@@ -1,6 +1,5 @@
 package com.chronos.app.calendar
 
-import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
 import android.provider.CalendarContract
@@ -9,139 +8,105 @@ import com.chronos.app.data.model.CalendarEvent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Google Calendar Integration
- *
- * Reads calendar events from the device's calendar provider.
- * Read-only access — CHRONOS suggests alarms but never creates
- * calendar events without explicit user approval.
- */
+/** Read-only Android Calendar Provider adapter. Events are never edited by CHRONOS. */
 @Singleton
 class CalendarSyncManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    companion object {
-        private const val TAG = "CalendarSyncManager"
-        private const val SYNC_WINDOW_HOURS = 48
-    }
-
-    /**
-     * Fetch today's and upcoming events from all calendars.
-     */
     suspend fun fetchUpcomingEvents(): List<CalendarEvent> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val dayStart = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val windowEnd = dayStart + DAYS_TO_SYNC * 24L * 60L * 60L * 1_000L
+        val projection = arrayOf(
+            CalendarContract.Events._ID,
+            CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.DESCRIPTION,
+            CalendarContract.Events.EVENT_LOCATION,
+            CalendarContract.Events.DTSTART,
+            CalendarContract.Events.DTEND,
+            CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.EVENT_COLOR,
+            CalendarContract.Events.HAS_ALARM,
+            CalendarContract.Events.RRULE
+        )
+        // Include events already in progress, not only events whose start is still in the future.
+        val selection = "${CalendarContract.Events.DTEND} >= ? AND ${CalendarContract.Events.DTSTART} <= ? AND ${CalendarContract.Events.DELETED} = 0"
+        val arguments = arrayOf(dayStart.toString(), windowEnd.toString())
         val events = mutableListOf<CalendarEvent>()
 
-        try {
-            val now = System.currentTimeMillis()
-            val windowEnd = now + (SYNC_WINDOW_HOURS * 3600_000L)
+        val cursor: Cursor? = context.contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            projection,
+            selection,
+            arguments,
+            "${CalendarContract.Events.DTSTART} ASC"
+        )
+        cursor?.use { result ->
+            val id = result.getColumnIndexOrThrow(CalendarContract.Events._ID)
+            val calendarId = result.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID)
+            val title = result.getColumnIndexOrThrow(CalendarContract.Events.TITLE)
+            val description = result.getColumnIndexOrThrow(CalendarContract.Events.DESCRIPTION)
+            val location = result.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION)
+            val start = result.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)
+            val end = result.getColumnIndexOrThrow(CalendarContract.Events.DTEND)
+            val allDay = result.getColumnIndexOrThrow(CalendarContract.Events.ALL_DAY)
+            val color = result.getColumnIndexOrThrow(CalendarContract.Events.EVENT_COLOR)
+            val hasAlarm = result.getColumnIndexOrThrow(CalendarContract.Events.HAS_ALARM)
+            val rule = result.getColumnIndexOrThrow(CalendarContract.Events.RRULE)
 
-            val projection = arrayOf(
-                CalendarContract.Events._ID,
-                CalendarContract.Events.CALENDAR_ID,
-                CalendarContract.Events.TITLE,
-                CalendarContract.Events.DESCRIPTION,
-                CalendarContract.Events.EVENT_LOCATION,
-                CalendarContract.Events.DTSTART,
-                CalendarContract.Events.DTEND,
-                CalendarContract.Events.ALL_DAY,
-                CalendarContract.Events.EVENT_COLOR,
-                CalendarContract.Events.HAS_ALARM,
-                CalendarContract.Events.RRULE
-            )
-
-            val selection = "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} <= ? AND ${CalendarContract.Events.DELETED} = 0"
-            val selectionArgs = arrayOf(now.toString(), windowEnd.toString())
-            val sortOrder = "${CalendarContract.Events.DTSTART} ASC"
-
-            val cursor: Cursor? = context.contentResolver.query(
-                CalendarContract.Events.CONTENT_URI,
-                projection,
-                selection,
-                selectionArgs,
-                sortOrder
-            )
-
-            cursor?.use {
-                val idIdx = it.getColumnIndex(CalendarContract.Events._ID)
-                val calIdIdx = it.getColumnIndex(CalendarContract.Events.CALENDAR_ID)
-                val titleIdx = it.getColumnIndex(CalendarContract.Events.TITLE)
-                val descIdx = it.getColumnIndex(CalendarContract.Events.DESCRIPTION)
-                val locIdx = it.getColumnIndex(CalendarContract.Events.EVENT_LOCATION)
-                val startIdx = it.getColumnIndex(CalendarContract.Events.DTSTART)
-                val endIdx = it.getColumnIndex(CalendarContract.Events.DTEND)
-                val allDayIdx = it.getColumnIndex(CalendarContract.Events.ALL_DAY)
-                val colorIdx = it.getColumnIndex(CalendarContract.Events.EVENT_COLOR)
-                val hasAlarmIdx = it.getColumnIndex(CalendarContract.Events.HAS_ALARM)
-                val rruleIdx = it.getColumnIndex(CalendarContract.Events.RRULE)
-
-                while (it.moveToNext()) {
-                    val event = CalendarEvent(
-                        eventId = it.getLong(idIdx),
-                        calendarId = it.getLong(calIdIdx),
-                        title = it.getString(titleIdx) ?: "Untitled",
-                        description = it.getString(descIdx) ?: "",
-                        location = it.getString(locIdx) ?: "",
-                        startTime = it.getLong(startIdx),
-                        endTime = it.getLong(endIdx),
-                        allDay = it.getInt(allDayIdx) == 1,
-                        color = if (it.isNull(colorIdx)) 0xFFD4A853.toInt() else it.getInt(colorIdx),
-                        hasAlarm = it.getInt(hasAlarmIdx) == 1,
-                        isRecurring = !it.getString(rruleIdx).isNullOrEmpty()
-                    )
-                    events.add(event)
-                }
+            while (result.moveToNext()) {
+                events += CalendarEvent(
+                    eventId = result.getLong(id),
+                    calendarId = result.getLong(calendarId),
+                    title = result.getString(title) ?: "Untitled event",
+                    description = result.getString(description).orEmpty(),
+                    location = result.getString(location).orEmpty(),
+                    startTime = result.getLong(start),
+                    endTime = result.getLong(end),
+                    allDay = result.getInt(allDay) != 0,
+                    color = if (result.isNull(color)) 0xFFC6A36B.toInt() else result.getInt(color),
+                    hasAlarm = result.getInt(hasAlarm) != 0,
+                    isRecurring = !result.getString(rule).isNullOrBlank()
+                )
             }
-
-            Log.i(TAG, "Fetched ${events.size} calendar events")
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Calendar permission denied", e)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching calendar events", e)
         }
-
+        Log.i(TAG, "Loaded ${events.size} calendar event records")
         events
     }
 
-    /**
-     * Detect overlapping events.
-     */
     fun detectConflicts(events: List<CalendarEvent>): List<Pair<CalendarEvent, CalendarEvent>> {
         val conflicts = mutableListOf<Pair<CalendarEvent, CalendarEvent>>()
         val sorted = events.sortedBy { it.startTime }
-
-        for (i in sorted.indices) {
-            for (j in i + 1 until sorted.size) {
-                if (sorted[j].startTime < sorted[i].endTime) {
-                    conflicts.add(sorted[i] to sorted[j])
-                } else {
-                    break
-                }
+        for (index in sorted.indices) {
+            for (next in index + 1 until sorted.size) {
+                if (sorted[next].startTime < sorted[index].endTime) conflicts += sorted[index] to sorted[next]
+                else break
             }
         }
-
         return conflicts
     }
 
-    /**
-     * Find gaps between events (free time blocks).
-     */
     fun findGaps(events: List<CalendarEvent>, minGapMinutes: Int = 30): List<Pair<Long, Long>> {
-        val gaps = mutableListOf<Pair<Long, Long>>()
-        val sorted = events.sortedBy { it.startTime }
-
-        for (i in 0 until sorted.size - 1) {
-            val gapStart = sorted[i].endTime
-            val gapEnd = sorted[i + 1].startTime
-            val gapMinutes = (gapEnd - gapStart) / 60_000
-
-            if (gapMinutes >= minGapMinutes) {
-                gaps.add(gapStart to gapEnd)
-            }
+        val sorted = events.sortedBy { it.endTime }
+        return sorted.zipWithNext().mapNotNull { (current, next) ->
+            val gap = next.startTime - current.endTime
+            if (gap >= minGapMinutes * 60_000L) current.endTime to next.startTime else null
         }
+    }
 
-        return gaps
+    companion object {
+        private const val TAG = "CalendarSyncManager"
+        private const val DAYS_TO_SYNC = 7
     }
 }

@@ -1,395 +1,294 @@
 package com.chronos.app.alarm.ui
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Snooze
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chronos.app.alarm.engine.AlarmScheduler
-import com.chronos.app.alarm.service.AlarmPlaybackService
+import com.chronos.app.alarm.receiver.AlarmDismissReceiver
+import com.chronos.app.alarm.receiver.AlarmSnoozeReceiver
+import com.chronos.app.settings.ChronosPreferences
+import com.chronos.app.settings.ChronosSettings
 import com.chronos.app.theme.ChronosTheme
-import com.chronos.app.theme.ChronosColors
+import com.chronos.app.theme.LocalChronosPalette
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+import javax.inject.Inject
 
-/**
- * Full-screen alarm ringing activity.
- *
- * Shown on the lock screen when an alarm fires.
- * Provides:
- * - Large time display
- * - Alarm label
- * - Animated sound waves
- * - Swipe-to-dismiss slider
- * - Snooze button
- */
+@AndroidEntryPoint
 class AlarmRingingActivity : ComponentActivity() {
+    @Inject lateinit var chronosSettings: ChronosSettings
 
-    private var alarmId: Long = -1L
+    private var ringingAlarm by mutableStateOf<RingingAlarm?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Allow showing on lock screen
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
-
-        // Keep screen on while alarm is ringing
+        showOnLockScreen()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
-        val label = intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_LABEL) ?: ""
-        val hour = intent.getIntExtra(AlarmScheduler.EXTRA_ALARM_HOUR, 0)
-        val minute = intent.getIntExtra(AlarmScheduler.EXTRA_ALARM_MINUTE, 0)
+        activeActivity = this
+        ringingAlarm = intent.toRingingAlarm()
 
         setContent {
-            ChronosTheme {
-                AlarmRingingScreen(
-                    alarmLabel = label,
-                    hour = hour,
-                    minute = minute,
-                    onDismiss = { dismissAlarm() },
-                    onSnooze = { snoozeAlarm() }
-                )
+            val preferences by chronosSettings.preferences.collectAsStateWithLifecycle(
+                initialValue = ChronosPreferences.Default
+            )
+            ChronosTheme(preferences) {
+                val alarm = ringingAlarm
+                if (alarm != null) {
+                    AlarmRingingScreen(
+                        alarmLabel = alarm.label,
+                        is24Hour = preferences.is24Hour,
+                        onDismiss = { dispatchDismiss(alarm) },
+                        onSnooze = { dispatchSnooze(alarm) }
+                    )
+                }
             }
         }
     }
 
-    private fun dismissAlarm() {
-        AlarmPlaybackService.instance?.dismissAlarm()
-        finish()
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        ringingAlarm = intent.toRingingAlarm()
     }
 
-    private fun snoozeAlarm() {
-        val intent = android.content.Intent(this, AlarmPlaybackService::class.java).apply {
-            action = AlarmPlaybackService.ACTION_SNOOZE_ALARM
-            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+    private fun showOnLockScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
         }
-        startForegroundService(intent)
+    }
+
+    private fun Intent.toRingingAlarm(): RingingAlarm? {
+        val id = getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
+        val instanceId = getStringExtra(AlarmScheduler.EXTRA_INSTANCE_ID).orEmpty()
+        if (id < 0L || instanceId.isBlank()) return null
+        return RingingAlarm(
+            id = id,
+            instanceId = instanceId,
+            scheduledAt = getLongExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, 0L),
+            isSnooze = getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false),
+            label = getStringExtra(AlarmScheduler.EXTRA_ALARM_LABEL).orEmpty()
+        )
+    }
+
+    private fun dispatchDismiss(alarm: RingingAlarm) {
+        sendBroadcast(Intent(this, AlarmDismissReceiver::class.java).apply {
+            action = "com.chronos.action.DISMISS_ALARM"
+            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id)
+            putExtra(AlarmScheduler.EXTRA_INSTANCE_ID, alarm.instanceId)
+            putExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, alarm.scheduledAt)
+            putExtra(AlarmScheduler.EXTRA_IS_SNOOZE, alarm.isSnooze)
+        })
         finish()
     }
 
-    override fun onBackPressed() {
-        // Prevent dismissing by back button — user must swipe or tap snooze
+    private fun dispatchSnooze(alarm: RingingAlarm) {
+        sendBroadcast(Intent(this, AlarmSnoozeReceiver::class.java).apply {
+            action = "com.chronos.action.SNOOZE_ALARM"
+            putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id)
+            putExtra(AlarmScheduler.EXTRA_INSTANCE_ID, alarm.instanceId)
+            putExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, alarm.scheduledAt)
+            putExtra(AlarmScheduler.EXTRA_IS_SNOOZE, alarm.isSnooze)
+        })
+    }
+
+    override fun onDestroy() {
+        if (activeActivity === this) activeActivity = null
+        super.onDestroy()
+    }
+
+    private data class RingingAlarm(
+        val id: Long,
+        val instanceId: String,
+        val scheduledAt: Long,
+        val isSnooze: Boolean,
+        val label: String
+    )
+
+    companion object {
+        @Volatile private var activeActivity: AlarmRingingActivity? = null
+
+        fun finishForInstance(instanceId: String) {
+            val activity = activeActivity ?: return
+            if (activity.ringingAlarm?.instanceId == instanceId) {
+                activity.runOnUiThread { if (!activity.isFinishing) activity.finish() }
+            }
+        }
     }
 }
 
 @Composable
-fun AlarmRingingScreen(
+private fun AlarmRingingScreen(
     alarmLabel: String,
-    hour: Int,
-    minute: Int,
+    is24Hour: Boolean,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit
 ) {
-    val timeText = String.format("%02d:%02d", hour, minute)
-    val dateFormat = SimpleDateFormat("EEEE · MMMM d", Locale.getDefault())
-    val dateText = dateFormat.format(Date()).uppercase()
-
-    // Animated gradient background
-    val infiniteTransition = rememberInfiniteTransition(label = "alarm_bg")
-    val gradientShift by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "gradient_shift"
-    )
-
-    // Sound wave animation
-    val wavePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave_phase"
-    )
-
-    // Pulse animation for the alarm icon
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = EaseInOutCubic),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
+    val palette = LocalChronosPalette.current
+    var now by androidx.compose.runtime.remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+    val time = rememberAlarmTime(now, is24Hour)
+    val date = rememberAlarmDate(now)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        ChronosColors.AlarmBackgroundPrimary,
-                        ChronosColors.AlarmBackgroundSecondary,
-                        ChronosColors.AlarmBackgroundTertiary
-                    ),
-                    center = Offset(0.5f, gradientShift),
-                    radius = 1000f
+                Brush.verticalGradient(
+                    listOf(palette.backgroundSecondary, palette.backgroundPrimary, palette.backgroundPrimary)
                 )
             )
+            .padding(horizontal = 28.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.height(80.dp))
-
-            // Pulsing alarm icon
             Icon(
                 imageVector = Icons.Default.Alarm,
                 contentDescription = null,
-                modifier = Modifier
-                    .size((64 * pulseScale).dp)
-                    .alpha(0.9f),
-                tint = ChronosColors.ChampagneGold
+                tint = palette.accentPrimary,
+                modifier = Modifier.size(48.dp)
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Alarm label
-            if (alarmLabel.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            if (alarmLabel.isNotBlank()) {
                 Text(
-                    text = alarmLabel.uppercase(),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        letterSpacing = 4.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = ChronosColors.ChampagneGold.copy(alpha = 0.8f),
+                    text = alarmLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.accentPrimary,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
             }
-
-            // Large time display
             Text(
-                text = timeText,
+                text = time,
                 style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 96.sp,
+                    fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Light,
+                    fontSize = 76.sp,
                     letterSpacing = (-2).sp
                 ),
-                color = Color.White,
+                color = palette.textPrimary,
                 textAlign = TextAlign.Center
             )
-
-            // Date
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = dateText,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    letterSpacing = 3.sp,
-                    fontWeight = FontWeight.Normal
-                ),
-                color = Color.White.copy(alpha = 0.6f),
+                text = date,
+                style = MaterialTheme.typography.labelLarge,
+                color = palette.textSecondary,
                 textAlign = TextAlign.Center
             )
+            Spacer(Modifier.height(32.dp))
+            AlarmSoundMark(color = palette.accentPrimary)
+            Spacer(Modifier.height(40.dp))
 
-            Spacer(modifier = Modifier.height(48.dp))
-
-            // Animated sound waves
-            SoundWaves(phase = wavePhase)
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Swipe to dismiss slider
-            SwipeToDismissSlider(
-                onDismiss = onDismiss,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Snooze button
-            SnoozeButton(onSnooze = onSnooze)
-
-            Spacer(modifier = Modifier.height(48.dp))
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = palette.accentPrimary,
+                    contentColor = Color(0xFF211A0E)
+                )
+            ) {
+                Icon(Icons.Default.Close, contentDescription = null)
+                Spacer(Modifier.size(10.dp))
+                Text("Dismiss alarm", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(14.dp))
+            OutlinedButton(
+                onClick = onSnooze,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Icon(Icons.Default.Snooze, contentDescription = null, tint = palette.accentPrimary)
+                Spacer(Modifier.size(10.dp))
+                Text("Snooze", color = palette.textPrimary, style = MaterialTheme.typography.titleMedium)
+            }
         }
     }
 }
 
 @Composable
-fun SoundWaves(phase: Float) {
+private fun AlarmSoundMark(color: Color) {
+    val heights = listOf(18, 28, 42, 54, 38, 28, 46, 24, 34, 50, 28, 18)
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        for (i in 0 until 24) {
-            val height = (20 + 30 * kotlin.math.abs(kotlin.math.sin(phase + i * 0.4))).dp
-            Box(
+        heights.forEachIndexed { index, height ->
+            Spacer(
                 modifier = Modifier
-                    .width(3.dp)
-                    .height(height)
-                    .padding(horizontal = 1.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        ChronosColors.ChampagneGold.copy(
-                            alpha = 0.3f + 0.4f * kotlin.math.abs(kotlin.math.sin(phase + i * 0.4)).toFloat()
-                        )
-                    )
+                    .size(width = 4.dp, height = height.dp)
+                    .background(color.copy(alpha = if (index % 3 == 0) 0.95f else 0.54f), CircleShape)
             )
         }
     }
 }
 
 @Composable
-fun SwipeToDismissSlider(
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var dragOffset by remember { mutableStateOf(0f) }
-    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-    val density = LocalDensity.current
-    val maxOffset = with(density) { screenWidth.toPx() - 80f }
-    val dismissThreshold = maxOffset * 0.7f
-
-    val progress = (dragOffset / maxOffset).coerceIn(0f, 1f)
-
-    Box(
-        modifier = modifier
-            .height(72.dp)
-            .clip(RoundedCornerShape(36.dp))
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        ChronosColors.GlassSurface.copy(alpha = 0.3f),
-                        ChronosColors.GlassSurface.copy(alpha = 0.1f + 0.3f * progress)
-                    )
-                )
-            )
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragEnd = {
-                        if (dragOffset >= dismissThreshold) {
-                            onDismiss()
-                        } else {
-                            dragOffset = 0f
-                        }
-                    },
-                    onDragCancel = { dragOffset = 0f }
-                ) { _, dragAmount ->
-                    dragOffset = (dragOffset + dragAmount).coerceIn(0f, maxOffset)
-                }
-            }
-    ) {
-        // Track text
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Swipe to dismiss →",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White.copy(alpha = 0.5f - 0.3f * progress),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // Glow effect following thumb
-        Box(
-            modifier = Modifier
-                .offset(x = dragOffset.toDp())
-                .size(72.dp)
-                .shadow(
-                    elevation = 8.dp,
-                    shape = CircleShape,
-                    ambientColor = ChronosColors.ChampagneGold.copy(alpha = 0.4f * progress),
-                    spotColor = ChronosColors.ChampagneGold.copy(alpha = 0.4f * progress)
-                )
-        )
-
-        // Thumb
-        Box(
-            modifier = Modifier
-                .offset(x = dragOffset.toDp())
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            ChronosColors.ChampagneGold.copy(alpha = 0.8f + 0.2f * progress),
-                            ChronosColors.ChampagneGold.copy(alpha = 0.6f)
-                        )
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Dismiss",
-                tint = Color.Black.copy(alpha = 0.8f),
-                modifier = Modifier.size(28.dp)
-            )
-        }
+private fun rememberAlarmTime(now: Long, is24Hour: Boolean): String =
+    androidx.compose.runtime.remember(now / 1_000L, is24Hour) {
+        SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date(now))
     }
-}
 
 @Composable
-fun SnoozeButton(onSnooze: () -> Unit) {
-    Button(
-        onClick = onSnooze,
-        modifier = Modifier
-            .fillMaxWidth(0.6f)
-            .height(56.dp),
-        shape = RoundedCornerShape(28.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = ChronosColors.GlassSurface.copy(alpha = 0.2f)
-        )
-    ) {
-        Icon(
-            imageVector = Icons.Default.Snooze,
-            contentDescription = null,
-            tint = ChronosColors.ChampagneGold,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = "Snooze",
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.9f)
-        )
-    }
+private fun rememberAlarmDate(now: Long): String = androidx.compose.runtime.remember(now / 86_400_000L) {
+    SimpleDateFormat("EEEE · MMMM d", Locale.getDefault()).format(Date(now))
 }
-
-val EaseInOutCubic: Easing = CubicBezierEasing(0.65f, 0f, 0.35f, 1f)

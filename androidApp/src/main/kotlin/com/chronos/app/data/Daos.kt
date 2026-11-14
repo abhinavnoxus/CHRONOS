@@ -16,6 +16,9 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE isEnabled = 1 ORDER BY hour, minute")
     suspend fun getEnabledAlarmsSync(): List<Alarm>
 
+    @Query("SELECT * FROM alarms ORDER BY hour, minute")
+    suspend fun getAllAlarmsSync(): List<Alarm>
+
     @Query("SELECT * FROM alarms WHERE id = :id")
     suspend fun getAlarmById(id: Long): Alarm?
 
@@ -45,6 +48,42 @@ interface AlarmDao {
 
     @Query("SELECT COUNT(*) FROM alarms WHERE isEnabled = 1")
     suspend fun getEnabledAlarmCount(): Int
+
+    @Query("UPDATE alarms SET isRinging = 0")
+    suspend fun clearRingingFlags()
+}
+
+@Dao
+interface AlarmInstanceDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(instance: AlarmInstance): Long
+
+    @Query("SELECT * FROM alarm_instances WHERE instanceId = :instanceId LIMIT 1")
+    suspend fun getById(instanceId: String): AlarmInstance?
+
+    @Query("SELECT * FROM alarm_instances WHERE state = 'ringing' ORDER BY triggeredAt DESC LIMIT 1")
+    suspend fun getActiveRinging(): AlarmInstance?
+
+    @Query("SELECT * FROM alarm_instances WHERE state = 'snoozed' AND snoozedUntil IS NOT NULL")
+    suspend fun getPendingSnoozes(): List<AlarmInstance>
+
+    @Query("UPDATE alarm_instances SET state = 'dismissed', dismissedAt = :dismissedAt WHERE instanceId = :instanceId AND alarmId = :alarmId AND state IN ('ringing', 'snoozed')")
+    suspend fun dismissActiveInstance(instanceId: String, alarmId: Long, dismissedAt: Long): Int
+
+    @Query("UPDATE alarm_instances SET state = 'snoozed', snoozedUntil = :snoozedUntil WHERE instanceId = :instanceId AND alarmId = :alarmId AND state = 'ringing'")
+    suspend fun snoozeIfRinging(instanceId: String, alarmId: Long, snoozedUntil: Long): Int
+
+    @Query("UPDATE alarm_instances SET state = 'completed' WHERE alarmId = :alarmId AND state = 'snoozed' AND snoozedUntil = :triggeredAt")
+    suspend fun completeSnooze(alarmId: Long, triggeredAt: Long): Int
+
+    @Query("UPDATE alarm_instances SET snoozedUntil = :snoozedUntil WHERE instanceId = :instanceId AND state = 'snoozed'")
+    suspend fun updateSnoozeDue(instanceId: String, snoozedUntil: Long): Int
+
+    @Query("UPDATE alarm_instances SET state = 'interrupted' WHERE state = 'ringing'")
+    suspend fun interruptRingingInstances(): Int
+
+    @Query("UPDATE alarm_instances SET state = 'superseded' WHERE instanceId = :instanceId AND state = 'ringing'")
+    suspend fun supersede(instanceId: String): Int
 }
 
 @Dao
@@ -154,6 +193,9 @@ interface AlarmHistoryDao {
 
     @Query("SELECT * FROM alarm_history ORDER BY timestamp DESC LIMIT 50")
     fun getRecentHistory(): Flow<List<AlarmHistory>>
+
+    @Query("SELECT * FROM alarm_history WHERE timestamp >= :since ORDER BY timestamp DESC")
+    fun getHistorySince(since: Long): Flow<List<AlarmHistory>>
 
     @Query("SELECT * FROM alarm_history WHERE action = 'missed' ORDER BY timestamp DESC")
     fun getMissedAlarms(): Flow<List<AlarmHistory>>

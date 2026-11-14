@@ -6,16 +6,20 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.chronos.app"
     compileSdk = 34
 
     defaultConfig {
         applicationId = "com.chronos.app"
-        minSdk = 31
+        minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

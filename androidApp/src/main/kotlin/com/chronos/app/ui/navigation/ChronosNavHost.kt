@@ -1,105 +1,151 @@
 package com.chronos.app.ui.navigation
 
-import androidx.compose.animation.*
+import android.provider.Settings
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Timelapse
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.chronos.app.theme.ChronosColors
+import androidx.navigation.navDeepLink
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.chronos.app.settings.SettingsViewModel
+import com.chronos.app.theme.LocalChronosPalette
+import com.chronos.app.theme.chronosMotionDuration
 import com.chronos.app.ui.screens.alarms.AlarmsScreen
 import com.chronos.app.ui.screens.clock.ClockScreen
+import com.chronos.app.ui.screens.focus.FocusScreen
+import com.chronos.app.ui.screens.insights.InsightsScreen
 import com.chronos.app.ui.screens.schedule.ScheduleScreen
 import com.chronos.app.ui.screens.settings.SettingsScreen
 
-sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    data object Clock : Screen("clock", "Clock", Icons.Default.Schedule)
-    data object Schedule : Screen("schedule", "Schedule", Icons.Default.CalendarMonth)
-    data object Alarms : Screen("alarms", "Alarms", Icons.Default.Alarm)
-    data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+private data class Destination(val route: String, val title: String, val icon: ImageVector)
+
+private object Routes {
+    const val HOME = "home"
+    const val PLAN = "plan"
+    const val ALARMS = "alarms"
+    const val FOCUS = "focus"
+    const val INSIGHTS = "insights"
+    const val SETTINGS = "settings"
 }
 
-val bottomNavItems = listOf(
-    Screen.Clock,
-    Screen.Schedule,
-    Screen.Alarms,
-    Screen.Settings
+private val bottomItems = listOf(
+    Destination(Routes.HOME, "Home", Icons.Default.Home),
+    Destination(Routes.PLAN, "Plan", Icons.Default.CalendarMonth),
+    Destination(Routes.ALARMS, "Alarms", Icons.Default.Alarm),
+    Destination(Routes.FOCUS, "Focus", Icons.Default.Timelapse),
+    Destination(Routes.INSIGHTS, "Insights", Icons.Default.AutoGraph)
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChronosNavHost() {
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
+fun ChronosNavHost(navController: NavHostController = rememberNavController()) {
+    val palette = LocalChronosPalette.current
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val preferences by settingsViewModel.preferences.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
+    val context = LocalContext.current
+    val systemMotionEnabled = remember {
+        runCatching { Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f }
+            .getOrDefault(true)
+    }
+    val motionDuration = if (systemMotionEnabled) chronosMotionDuration(preferences, standardMillis = 240) else 0
 
     Scaffold(
+        containerColor = palette.backgroundPrimary,
         bottomBar = {
-            NavigationBar(
-                containerColor = ChronosColors.CharcoalMedium,
-                contentColor = ChronosColors.TextPrimary
-            ) {
-                bottomNavItems.forEach { screen ->
-                    val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
-
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = screen.icon,
-                                contentDescription = screen.title,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = screen.title,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        },
-                        selected = selected,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            if (currentDestination?.route != Routes.SETTINGS) {
+                NavigationBar(containerColor = palette.backgroundSecondary) {
+                    bottomItems.forEach { destination ->
+                        val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(destination.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ChronosColors.ChampagneGold,
-                            selectedTextColor = ChronosColors.ChampagneGold,
-                            unselectedIconColor = ChronosColors.TextTertiary,
-                            unselectedTextColor = ChronosColors.TextTertiary,
-                            indicatorColor = ChronosColors.ChampagneGold.copy(alpha = 0.12f)
+                            },
+                            icon = { Icon(destination.icon, contentDescription = destination.title) },
+                            label = { Text(destination.title, style = MaterialTheme.typography.labelSmall) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = palette.accentPrimary,
+                                selectedTextColor = palette.accentPrimary,
+                                unselectedIconColor = palette.textTertiary,
+                                unselectedTextColor = palette.textTertiary,
+                                indicatorColor = palette.accentPrimary.copy(alpha = 0.14f)
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Clock.route,
+            startDestination = Routes.HOME,
             modifier = Modifier.padding(innerPadding),
-            enterTransition = { fadeIn(animationSpec = tween(300)) },
-            exitTransition = { fadeOut(animationSpec = tween(300)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(300)) },
-            popExitTransition = { fadeOut(animationSpec = tween(300)) }
+            enterTransition = {
+                if (motionDuration == 0) EnterTransition.None else fadeIn(tween(motionDuration))
+            },
+            exitTransition = {
+                if (motionDuration == 0) ExitTransition.None else fadeOut(tween(motionDuration))
+            },
+            popEnterTransition = {
+                if (motionDuration == 0) EnterTransition.None else fadeIn(tween(motionDuration))
+            },
+            popExitTransition = {
+                if (motionDuration == 0) ExitTransition.None else fadeOut(tween(motionDuration))
+            }
         ) {
-            composable(Screen.Clock.route) { ClockScreen() }
-            composable(Screen.Schedule.route) { ScheduleScreen() }
-            composable(Screen.Alarms.route) { AlarmsScreen() }
-            composable(Screen.Settings.route) { SettingsScreen() }
+            composable(
+                Routes.HOME,
+                deepLinks = listOf(navDeepLink { uriPattern = "chronos://app/home" })
+            ) {
+                ClockScreen(
+                    onNavigate = { route -> navigateOnce(navController, route) },
+                    onOpenSettings = { navigateOnce(navController, Routes.SETTINGS) }
+                )
+            }
+            composable(Routes.PLAN) { ScheduleScreen() }
+            composable(Routes.ALARMS) { AlarmsScreen() }
+            composable(Routes.FOCUS) { FocusScreen() }
+            composable(Routes.INSIGHTS) { InsightsScreen() }
+            composable(Routes.SETTINGS) { SettingsScreen(onBack = { navController.popBackStack() }) }
         }
     }
+}
+
+private fun navigateOnce(navController: NavHostController, route: String) {
+    if (navController.currentDestination?.route == route) return
+    navController.navigate(route) { launchSingleTop = true }
 }

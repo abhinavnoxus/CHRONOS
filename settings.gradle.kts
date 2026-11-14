@@ -1,8 +1,3 @@
-rootProject.name = "CHRONOS"
-
-include(":androidApp")
-include(":shared")
-
 pluginManagement {
     repositories {
         google()
@@ -17,3 +12,8 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
+
+rootProject.name = "CHRONOS"
+
+include(":androidApp")
+include(":shared")

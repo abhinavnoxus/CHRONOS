@@ -1,7 +1,6 @@
 package com.chronos.app.di
 
 import android.content.Context
-import com.chronos.app.alarm.engine.AlarmScheduler
 import com.chronos.app.data.AlarmDao
 import com.chronos.app.data.AlarmHistoryDao
 import com.chronos.app.data.CalendarEventDao
@@ -37,9 +36,4 @@ object AppModule {
     @Provides fun provideFocusSessionDao(db: ChronosDatabase): FocusSessionDao = db.focusSessionDao()
     @Provides fun provideAlarmHistoryDao(db: ChronosDatabase): AlarmHistoryDao = db.alarmHistoryDao()
 
-    @Provides
-    @Singleton
-    fun provideAlarmScheduler(@ApplicationContext context: Context): AlarmScheduler {
-        return AlarmScheduler(context)
-    }
 }

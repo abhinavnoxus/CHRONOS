@@ -1,256 +1,343 @@
 package com.chronos.app.ui.screens.clock
 
-import android.text.format.DateFormat
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timelapse
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.chronos.app.theme.ChronosColors
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.chronos.app.alarm.AlarmViewModel
+import com.chronos.app.alarm.engine.AlarmTimeCalculator
+import com.chronos.app.data.model.Alarm
+import com.chronos.app.settings.ChronosPreferences
+import com.chronos.app.theme.LocalChronosPalette
 import com.chronos.app.ui.components.GlassCard
 import com.chronos.app.ui.components.GlassStyle
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun ClockScreen() {
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    val context = LocalContext.current
-    val is24Hour = DateFormat.is24HourFormat(context)
+fun ClockScreen(
+    onNavigate: (String) -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    val palette = LocalChronosPalette.current
+    val clockViewModel: ClockViewModel = hiltViewModel()
+    val preferences by clockViewModel.preferences.collectAsState()
+    val alarmViewModel: AlarmViewModel = hiltViewModel()
+    val enabledAlarms by alarmViewModel.enabledAlarms.collectAsState()
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(1000L)
-        }
-    }
-
-    val calendar = remember(currentTime) {
-        Calendar.getInstance().apply { timeInMillis = currentTime }
-    }
-
-    val hour = if (is24Hour) calendar.get(Calendar.HOUR_OF_DAY)
-    else {
-        val h = calendar.get(Calendar.HOUR)
-        if (h == 0) 12 else h
-    }
-    val minute = calendar.get(Calendar.MINUTE)
-    val second = calendar.get(Calendar.SECOND)
-
-    val dateFormat = remember { SimpleDateFormat("EEEE · MMMM d", Locale.getDefault()) }
-    val dateText = remember(currentTime / 86400000L) { dateFormat.format(Date(currentTime)).uppercase() }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Date
-        Text(
-            text = dateText,
-            style = MaterialTheme.typography.bodyLarge.copy(
-                letterSpacing = 4.sp,
-                fontWeight = FontWeight.Normal
-            ),
-            color = ChronosColors.TextSecondary
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Analog clock
-        AnalogClock(
-            hour = calendar.get(Calendar.HOUR_OF_DAY),
-            minute = minute,
-            second = second,
-            modifier = Modifier.size(220.dp)
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Digital time
-        Text(
-            text = buildTimeString(hour, minute, second, is24Hour),
-            style = MaterialTheme.typography.displayLarge.copy(
-                fontSize = 64.sp,
-                fontWeight = FontWeight.ExtraLight,
-                letterSpacing = (-1).sp
-            ),
-            color = ChronosColors.TextPrimary
-        )
-
-        // Seconds display
-        Text(
-            text = String.format(":%02d", second),
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Light,
-                color = ChronosColors.ChampagneGold
-            ),
-            modifier = Modifier.offset(y = (-16).dp)
-        )
-
-        Spacer(modifier = Modifier.height(48.dp))
-
-        // Quick info cards
-        GlassCard(
-            style = GlassStyle.LUXURY,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "CHRONOS",
+                        style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 3.sp),
+                        color = palette.accentPrimary
+                    )
+                    Text(
+                        text = "Your time, in focus.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = palette.textSecondary
+                    )
+                }
+                IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Settings, contentDescription = "Open settings", tint = palette.textSecondary)
+                }
+            }
+        }
+        item { ClockHero(preferences) }
+        item { NextAlarmCard(alarms = enabledAlarms, is24Hour = preferences.is24Hour, onOpenAlarms = { onNavigate("alarms") }) }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "QUICK ACCESS",
+                    style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 2.sp),
+                    color = palette.textTertiary
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ActionTile(
+                        title = "Alarms",
+                        subtitle = "Create or adjust",
+                        icon = Icons.Default.Alarm,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onNavigate("alarms") }
+                    )
+                    ActionTile(
+                        title = "Plan",
+                        subtitle = "Today's schedule",
+                        icon = Icons.Default.CalendarMonth,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onNavigate("plan") }
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ActionTile(
+                        title = "Focus",
+                        subtitle = "Start a session",
+                        icon = Icons.Default.Timelapse,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onNavigate("focus") }
+                    )
+                    ActionTile(
+                        title = "Insights",
+                        subtitle = "Recorded time",
+                        icon = Icons.Default.AutoGraph,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onNavigate("insights") }
+                    )
+                }
+            }
+        }
+        item {
             Text(
-                text = "NEXT ALARM",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp),
-                color = ChronosColors.TextTertiary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "07:30",
-                style = MaterialTheme.typography.headlineLarge,
-                color = ChronosColors.ChampagneGold
-            )
-            Text(
-                text = "Tomorrow · Monday",
-                style = MaterialTheme.typography.bodyMedium,
-                color = ChronosColors.TextSecondary
+                text = "Offline by design · Your schedules stay on this device",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textTertiary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        GlassCard(
-            style = GlassStyle.LUXURY,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "UPCOMING",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp),
-                color = ChronosColors.TextTertiary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Team Standup",
-                style = MaterialTheme.typography.titleLarge,
-                color = ChronosColors.TextPrimary
-            )
-            Text(
-                text = "10:00 AM · Google Meet",
-                style = MaterialTheme.typography.bodyMedium,
-                color = ChronosColors.TextSecondary
-            )
-        }
-    }
-}
-
-private fun buildTimeString(hour: Int, minute: Int, second: Int, is24Hour: Boolean): String {
-    return if (is24Hour) {
-        String.format("%02d:%02d", hour, minute)
-    } else {
-        String.format("%d:%02d", hour, minute)
     }
 }
 
 @Composable
-fun AnalogClock(
-    hour: Int,
-    minute: Int,
-    second: Int,
-    modifier: Modifier = Modifier
-) {
-    val champagneGold = ChronosColors.ChampagneGold
-    val textSecondary = ChronosColors.TextSecondary
-    val glassBorder = ChronosColors.GlassBorder
+private fun ClockHero(preferences: ChronosPreferences) {
+    val palette = LocalChronosPalette.current
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(preferences.showSeconds) {
+        while (true) {
+            now = System.currentTimeMillis()
+            val step = if (preferences.showSeconds) 1_000L else 60_000L
+            delay((step - (now % step)).coerceAtLeast(50L))
+        }
+    }
+    val calendar = remember(now) { Calendar.getInstance().apply { timeInMillis = now } }
+    val useAnalog = preferences.clockStyle.equals("analog", true) || preferences.clockStyle.equals("hybrid", true)
 
-    Canvas(modifier = modifier) {
-        val centerX = size.width / 2
-        val centerY = size.height / 2
-        val radius = size.minDimension / 2
-
-        // Outer ring
-        drawCircle(
-            color = glassBorder,
-            radius = radius,
-            center = Offset(centerX, centerY),
-            style = Stroke(width = 2f)
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        style = GlassStyle.LUXURY,
+        cornerRadius = 26.dp,
+        padding = 22.dp
+    ) {
+        if (preferences.showDate) {
+            Text(
+                text = SimpleDateFormat("EEEE · MMMM d", Locale.getDefault()).format(Date(now)).uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.8.sp),
+                color = palette.textSecondary,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        }
+        if (useAnalog) {
+            Spacer(Modifier.height(18.dp))
+            AnalogClock(
+                hour = calendar.get(Calendar.HOUR_OF_DAY),
+                minute = calendar.get(Calendar.MINUTE),
+                second = calendar.get(Calendar.SECOND),
+                modifier = Modifier.size(168.dp).align(Alignment.CenterHorizontally)
+            )
+        }
+        Spacer(Modifier.height(if (useAnalog) 18.dp else 8.dp))
+        Text(
+            text = formatClockTime(now, preferences),
+            style = MaterialTheme.typography.displayLarge.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Light,
+                fontSize = 54.sp,
+                letterSpacing = (-1.8).sp
+            ),
+            color = palette.textPrimary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
+        Text(
+            text = if (preferences.is24Hour) "LOCAL TIME · 24-HOUR" else "LOCAL TIME · 12-HOUR",
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.8.sp),
+            color = palette.textTertiary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        )
+    }
+}
 
-        // Hour markers
-        for (i in 0 until 12) {
-            val angle = Math.toRadians((i * 30 - 90).toDouble())
-            val startRadius = radius * 0.85f
-            val endRadius = radius * 0.95f
+@Composable
+private fun NextAlarmCard(alarms: List<Alarm>, is24Hour: Boolean, onOpenAlarms: () -> Unit) {
+    val palette = LocalChronosPalette.current
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(30_000L)
+        }
+    }
+    val next = remember(alarms, now / 30_000L) {
+        alarms.mapNotNull { alarm ->
+            AlarmTimeCalculator.calculateNextTriggerTime(alarm, now)?.let { alarm to it }
+        }.minByOrNull { it.second }
+    }
+
+    GlassCard(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).clickable(onClick = onOpenAlarms),
+        style = GlassStyle.SMOKED,
+        cornerRadius = 22.dp,
+        padding = 18.dp
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "NEXT ALARM",
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
+                    color = palette.textTertiary
+                )
+                Spacer(Modifier.height(6.dp))
+                if (next == null) {
+                    Text("No alarms scheduled", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+                    Text("Tap to create one", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+                } else {
+                    val alarm = next.first
+                    val triggerAt = next.second
+                    Text(
+                        text = SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm a", Locale.getDefault()).format(Date(triggerAt)),
+                        style = MaterialTheme.typography.headlineLarge.copy(fontFamily = FontFamily.Monospace),
+                        color = palette.accentPrimary
+                    )
+                    val timeLeft = ((triggerAt - now).coerceAtLeast(0L) / 60_000L)
+                    val detail = SimpleDateFormat("EEE · MMM d", Locale.getDefault()).format(Date(triggerAt))
+                    Text(
+                        text = "${alarm.label.ifBlank { "Alarm" }} · $detail · in ${timeLeft / 60}h ${timeLeft % 60}m",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+                }
+            }
+            Icon(Icons.Default.Alarm, contentDescription = null, tint = palette.accentPrimary, modifier = Modifier.size(28.dp))
+        }
+    }
+}
+
+@Composable
+private fun ActionTile(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val palette = LocalChronosPalette.current
+    GlassCard(
+        modifier = modifier
+            .height(104.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick),
+        style = GlassStyle.LUXURY,
+        cornerRadius = 18.dp,
+        padding = 12.dp
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = palette.accentPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.size(10.dp))
+            Column {
+                Text(title, style = MaterialTheme.typography.titleSmall, color = palette.textPrimary)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = palette.textSecondary, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalogClock(hour: Int, minute: Int, second: Int, modifier: Modifier = Modifier) {
+    val palette = LocalChronosPalette.current
+    Canvas(modifier = modifier) {
+        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+        val radius = size.minDimension * 0.46f
+        drawCircle(palette.borderSubtle, radius = radius, center = center, style = Stroke(width = 1.4.dp.toPx()))
+        for (mark in 0 until 60) {
+            val angle = Math.toRadians(mark * 6.0 - 90.0)
+            val major = mark % 5 == 0
+            val inner = radius * if (major) 0.82f else 0.9f
+            val outer = radius * 0.97f
             drawLine(
-                color = if (i % 3 == 0) champagneGold else textSecondary.copy(alpha = 0.5f),
-                start = Offset(
-                    centerX + (startRadius * cos(angle)).toFloat(),
-                    centerY + (startRadius * sin(angle)).toFloat()
-                ),
-                end = Offset(
-                    centerX + (endRadius * cos(angle)).toFloat(),
-                    centerY + (endRadius * sin(angle)).toFloat()
-                ),
-                strokeWidth = if (i % 3 == 0) 3f else 1.5f,
+                color = if (major) palette.accentPrimary else palette.textTertiary.copy(alpha = 0.58f),
+                start = androidx.compose.ui.geometry.Offset(center.x + cos(angle).toFloat() * inner, center.y + sin(angle).toFloat() * inner),
+                end = androidx.compose.ui.geometry.Offset(center.x + cos(angle).toFloat() * outer, center.y + sin(angle).toFloat() * outer),
+                strokeWidth = if (major) 1.8.dp.toPx() else 1.dp.toPx(),
                 cap = StrokeCap.Round
             )
         }
-
-        // Hour hand
-        val hourAngle = Math.toRadians(((hour % 12 + minute / 60f) * 30 - 90).toDouble())
-        drawLine(
-            color = champagneGold,
-            start = Offset(centerX, centerY),
-            end = Offset(
-                centerX + (radius * 0.5f * cos(hourAngle)).toFloat(),
-                centerY + (radius * 0.5f * sin(hourAngle)).toFloat()
-            ),
-            strokeWidth = 4f,
-            cap = StrokeCap.Round
-        )
-
-        // Minute hand
-        val minuteAngle = Math.toRadians(((minute + second / 60f) * 6 - 90).toDouble())
-        drawLine(
-            color = champagneGold.copy(alpha = 0.8f),
-            start = Offset(centerX, centerY),
-            end = Offset(
-                centerX + (radius * 0.7f * cos(minuteAngle)).toFloat(),
-                centerY + (radius * 0.7f * sin(minuteAngle)).toFloat()
-            ),
-            strokeWidth = 2.5f,
-            cap = StrokeCap.Round
-        )
-
-        // Second hand
-        val secondAngle = Math.toRadians((second * 6 - 90).toDouble())
-        drawLine(
-            color = Color(0xFFE53935),
-            start = Offset(centerX, centerY),
-            end = Offset(
-                centerX + (radius * 0.75f * cos(secondAngle)).toFloat(),
-                centerY + (radius * 0.75f * sin(secondAngle)).toFloat()
-            ),
-            strokeWidth = 1.5f,
-            cap = StrokeCap.Round
-        )
-
-        // Center dot
-        drawCircle(
-            color = champagneGold,
-            radius = 5f,
-            center = Offset(centerX, centerY)
-        )
+        fun hand(degrees: Double, length: Float, width: Float, color: Color) {
+            val angle = Math.toRadians(degrees - 90.0)
+            drawLine(
+                color = color,
+                start = center,
+                end = androidx.compose.ui.geometry.Offset(center.x + cos(angle).toFloat() * length, center.y + sin(angle).toFloat() * length),
+                strokeWidth = width,
+                cap = StrokeCap.Round
+            )
+        }
+        hand((hour % 12) * 30.0 + minute * 0.5, radius * 0.48f, 4.dp.toPx(), palette.accentPrimary)
+        hand(minute * 6.0 + second * 0.1, radius * 0.72f, 2.8.dp.toPx(), palette.textPrimary)
+        if (second >= 0) hand(second * 6.0, radius * 0.79f, 1.2.dp.toPx(), palette.accentSecondary)
+        drawCircle(palette.accentPrimary, radius = 4.dp.toPx(), center = center)
     }
+}
+
+private fun formatClockTime(now: Long, preferences: ChronosPreferences): String {
+    val pattern = buildString {
+        append(if (preferences.is24Hour) "HH:mm" else "h:mm")
+        if (preferences.showSeconds) append(":ss")
+        if (!preferences.is24Hour) append(" a")
+    }
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(now))
 }

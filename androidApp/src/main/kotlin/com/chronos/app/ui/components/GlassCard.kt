@@ -1,14 +1,17 @@
 package com.chronos.app.ui.components
 
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -16,20 +19,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.chronos.app.theme.ChronosColors
+import com.chronos.app.theme.LocalChronosPalette
 
-/**
- * CHRONOS Glass Card Components
- *
- * Three glass styles:
- * - Luxury Glass: Clear, reflective, champagne gold border
- * - Smoked Glass: Darker, more opaque
- * - Frosted Glass: Blurred background, diffused
- */
-
-enum class GlassStyle {
-    LUXURY, SMOKED, FROSTED
-}
+/** Reusable surface treatments; blur is intentionally avoided on scrolling content. */
+enum class GlassStyle { LUXURY, SMOKED, FROSTED }
 
 @Composable
 fun GlassCard(
@@ -39,53 +32,43 @@ fun GlassCard(
     padding: Dp = 16.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val palette = LocalChronosPalette.current
     val shape = RoundedCornerShape(cornerRadius)
-
-    val (backgroundColor, borderColor, borderAlpha) = when (style) {
-        GlassStyle.LUXURY -> Triple(
-            ChronosColors.GlassSurface.copy(alpha = 0.06f),
-            ChronosColors.ChampagneGold,
-            0.15f
-        )
-        GlassStyle.SMOKED -> Triple(
-            ChronosColors.GlassSurfaceDark.copy(alpha = 0.7f),
-            ChronosColors.GlassBorder,
-            1f
-        )
-        GlassStyle.FROSTED -> Triple(
-            ChronosColors.GlassSurface.copy(alpha = 0.1f),
-            ChronosColors.GlassBorderLight,
-            1f
-        )
+    val surface = when (style) {
+        GlassStyle.LUXURY -> palette.surfaceGlass
+        GlassStyle.SMOKED -> palette.surfaceSmoked
+        GlassStyle.FROSTED -> palette.surfaceFrosted
+    }
+    val border = when (style) {
+        GlassStyle.LUXURY -> palette.accentPrimary.copy(alpha = if (palette.isDark) 0.2f else 0.28f)
+        GlassStyle.SMOKED -> palette.borderSubtle
+        GlassStyle.FROSTED -> palette.borderSubtle.copy(alpha = 1f)
+    }
+    val elevation = when {
+        palette.lowEffects || palette.performanceMode == "saver" -> 0.dp
+        palette.performanceMode == "balanced" -> if (style == GlassStyle.LUXURY) 2.dp else 1.dp
+        style == GlassStyle.LUXURY -> 4.dp
+        else -> 2.dp
     }
 
     Column(
         modifier = modifier
-            .shadow(
-                elevation = if (style == GlassStyle.LUXURY) 4.dp else 2.dp,
-                shape = shape,
-                ambientColor = if (style == GlassStyle.LUXURY)
-                    ChronosColors.ChampagneGold.copy(alpha = 0.1f)
-                else Color.Transparent,
-                spotColor = if (style == GlassStyle.LUXURY)
-                    ChronosColors.ChampagneGold.copy(alpha = 0.05f)
-                else Color.Transparent
-            )
+            .shadow(elevation, shape, clip = false)
             .clip(shape)
             .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        backgroundColor,
-                        backgroundColor.copy(alpha = backgroundColor.alpha * 0.7f)
+                brush = if (palette.lowEffects) {
+                    Brush.verticalGradient(listOf(surface, surface))
+                } else {
+                    Brush.verticalGradient(
+                        listOf(
+                            surface.copy(alpha = (surface.alpha + 0.035f).coerceAtMost(1f)),
+                            surface
+                        )
                     )
-                ),
+                },
                 shape = shape
             )
-            .border(
-                width = 1.dp,
-                color = borderColor.copy(alpha = borderAlpha),
-                shape = shape
-            )
+            .border(1.dp, border, shape)
             .padding(padding)
     ) {
         content()
@@ -96,33 +79,36 @@ fun GlassCard(
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(16.dp),
-    alpha: Float = 0.05f,
-    content: @Composable () -> Unit
+    elevated: Boolean = false,
+    content: @Composable BoxScope.() -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .background(
-                ChronosColors.GlassSurface.copy(alpha = alpha),
-                shape = shape
-            )
-    ) {
-        content()
-    }
+    val palette = LocalChronosPalette.current
+    SpacerSurface(modifier = modifier, shape = shape, color = if (elevated) palette.surfaceGlassElevated else palette.surfaceGlass, content = content)
 }
 
-/**
- * Subtle glass divider line
- */
 @Composable
-fun GlassDivider(
-    modifier: Modifier = Modifier,
-    color: Color = ChronosColors.GlassBorder
+private fun SpacerSurface(
+    modifier: Modifier,
+    shape: Shape,
+    color: Color,
+    content: @Composable BoxScope.() -> Unit
 ) {
+    androidx.compose.foundation.layout.Box(
+        modifier = modifier
+            .clip(shape)
+            .background(color, shape)
+            .border(1.dp, LocalChronosPalette.current.borderSubtle, shape),
+        content = content
+    )
+}
+
+@Composable
+fun GlassDivider(modifier: Modifier = Modifier) {
+    val palette = LocalChronosPalette.current
     Spacer(
         modifier = modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(color)
+            .background(palette.borderSubtle)
     )
 }
