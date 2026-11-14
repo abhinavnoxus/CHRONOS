@@ -40,7 +40,7 @@ class TimerScheduler @Inject constructor(@ApplicationContext private val context
         }.isSuccess
     }
     fun cancel(id: Long) {
-        PendingIntent.getBroadcast(context, code(id), Intent(context, TimerReceiver::class.java).apply { data = Uri.parse("chronos://timer/$id") },
+        PendingIntent.getBroadcast(context, code(id), Intent(context, TimerReceiver::class.java).apply { action = ACTION_TIMER; data = Uri.parse("chronos://timer/$id") },
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)?.let { manager.cancel(it); it.cancel() }
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_BASE + (id % 100000).toInt())
     }

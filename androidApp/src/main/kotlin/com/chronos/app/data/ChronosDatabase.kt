@@ -65,7 +65,7 @@ abstract class ChronosDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""CREATE TABLE IF NOT EXISTS `routines` (
                     `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

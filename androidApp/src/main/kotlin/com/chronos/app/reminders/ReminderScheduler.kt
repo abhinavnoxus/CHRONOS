@@ -20,7 +20,7 @@ class ReminderScheduler @Inject constructor(@ApplicationContext private val cont
 
     fun schedule(reminder: Reminder): Boolean {
         cancel(reminder.id)
-        if (reminder.isCompleted || reminder.scheduledTime <= System.currentTimeMillis()) return false
+        if (reminder.isCompleted || (!reminder.isRecurring && reminder.scheduledTime <= System.currentTimeMillis())) return false
         val next = if (reminder.isRecurring && reminder.repeatInterval >= 60_000L) ReminderRecurrence.next(reminder, System.currentTimeMillis()) ?: return false else reminder.scheduledTime
         return scheduleAt(next, pendingIntent(reminder.id, reminder.title, next, false))
     }
@@ -48,6 +48,7 @@ class ReminderScheduler @Inject constructor(@ApplicationContext private val cont
 
     private fun cancelIntent(id: Long, routine: Boolean) {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
+            action = ACTION_REMIND
             data = Uri.parse("chronos://${if (routine) "routine" else "reminder"}/$id")
         }
         PendingIntent.getBroadcast(context, request(id, routine), intent,
