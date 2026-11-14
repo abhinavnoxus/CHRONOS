@@ -29,6 +29,7 @@ object AppModule {
     }
 
     @Provides fun provideAlarmDao(db: ChronosDatabase): AlarmDao = db.alarmDao()
+    @Provides fun provideFocusClock(clock: com.chronos.app.ui.screens.focus.AndroidFocusClock): com.chronos.app.ui.screens.focus.FocusClock = clock
     @Provides fun provideCalendarEventDao(db: ChronosDatabase): CalendarEventDao = db.calendarEventDao()
     @Provides fun provideReminderDao(db: ChronosDatabase): ReminderDao = db.reminderDao()
     @Provides fun provideRoutineDao(db: ChronosDatabase): RoutineDao = db.routineDao()

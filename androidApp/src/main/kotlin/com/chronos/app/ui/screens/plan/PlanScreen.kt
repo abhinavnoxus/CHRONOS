@@ -27,7 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,7 +67,7 @@ fun PlanScreen() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val palette = LocalChronosPalette.current
     Column(Modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = tab, containerColor = palette.backgroundPrimary, contentColor = palette.accentPrimary) {
+        TabRow(selectedTabIndex = tab, containerColor = palette.backgroundPrimary, contentColor = palette.accentPrimary) {
             listOf("Agenda", "Reminders", "Routines").forEachIndexed { index, title ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
             }
@@ -76,6 +76,7 @@ fun PlanScreen() {
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun RemindersPane() {
     val viewModel: ReminderViewModel = hiltViewModel()
@@ -110,7 +111,7 @@ private fun RemindersPane() {
                     IconButton(onClick = { editing = item }) { Icon(Icons.Default.Notifications, "Edit reminder", tint = palette.textSecondary) }
                     IconButton(onClick = { deleting = item }) { Icon(Icons.Default.Delete, "Delete reminder", tint = palette.textTertiary) }
                 }
-                androidx.compose.material3.HorizontalDivider(color = palette.borderSubtle)
+                com.chronos.app.ui.components.GlassDivider()
             }
         }
     }
@@ -120,6 +121,7 @@ private fun RemindersPane() {
     deleting?.let { ConfirmDelete(it.title, { deleting = null }, { viewModel.deleteReminder(it); deleting = null }) }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun RoutinesPane() {
     val viewModel: ReminderViewModel = hiltViewModel()
@@ -155,6 +157,7 @@ private fun RoutinesPane() {
     deleting?.let { ConfirmDelete(it.title, { deleting = null }, { viewModel.deleteRoutine(it.id); deleting = null }) }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderEditor(initial: Reminder?, is24Hour: Boolean, onDismiss: () -> Unit, onSave: (Reminder) -> Unit) {
     var title by remember { mutableStateOf(initial?.title.orEmpty()) }
@@ -181,6 +184,7 @@ private fun ReminderEditor(initial: Reminder?, is24Hour: Boolean, onDismiss: () 
     }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun RoutineEditor(initial: Routine?, is24Hour: Boolean, onDismiss: () -> Unit, onSave: (Routine) -> Unit) {
     val context = LocalContext.current

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -56,7 +57,9 @@ fun FocusScreen() {
     val palette = LocalChronosPalette.current
     val viewModel: FocusViewModel = hiltViewModel()
     val runtime by viewModel.runtime.collectAsStateWithLifecycle()
-    var selectedMinutes by remember { mutableIntStateOf(25) }
+    val preferences by viewModel.preferences.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
+    var selectedMinutes by remember(preferences.defaultFocusMinutes) { mutableIntStateOf(preferences.defaultFocusMinutes) }
     var label by remember { mutableStateOf("Deep work") }
     var tick by remember { mutableIntStateOf(0) }
 
@@ -96,7 +99,7 @@ fun FocusScreen() {
                     Spacer(Modifier.height(12.dp))
                     Text("FOCUS LENGTH", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.6.sp), color = palette.textTertiary)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(25, 45, 60).forEach { duration ->
+                        listOf(25, 45, 60, 90).forEach { duration ->
                             FilterChip(
                                 selected = selectedMinutes == duration,
                                 onClick = { selectedMinutes = duration },
@@ -173,6 +176,18 @@ fun FocusScreen() {
                             Text("Finish")
                         }
                     }
+                }
+            }
+        }
+        if (history.isNotEmpty()) {
+            item { com.chronos.app.ui.components.SectionLabel("Session history") }
+            items(history.take(10), key = { it.id }) { session ->
+                androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                        Text(session.label, style = MaterialTheme.typography.titleSmall, color = palette.textPrimary)
+                        Text(java.text.SimpleDateFormat("MMM d · HH:mm", java.util.Locale.getDefault()).format(java.util.Date(session.startedAt)), style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+                    }
+                    Text("${session.totalFocusMinutes} min · ${session.completedSessions} rounds", style = MaterialTheme.typography.labelMedium, color = palette.accentPrimary)
                 }
             }
         }

@@ -28,7 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,7 +73,7 @@ fun TimeToolsScreen(onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("Home") }
             Text("Clock studio", style = MaterialTheme.typography.titleLarge, color = palette.textPrimary)
         }
-        PrimaryTabRow(selectedTabIndex = tab, containerColor = palette.backgroundPrimary, contentColor = palette.accentPrimary) {
+        TabRow(selectedTabIndex = tab, containerColor = palette.backgroundPrimary, contentColor = palette.accentPrimary) {
             listOf("Timers", "Stopwatch", "World").forEachIndexed { index, title -> Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) }) }
         }
         when (tab) { 1 -> StopwatchPane(); 2 -> WorldClockPane(); else -> TimersPane() }
