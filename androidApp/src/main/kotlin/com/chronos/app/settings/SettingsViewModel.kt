@@ -26,4 +26,10 @@ class SettingsViewModel @Inject constructor(
     fun setShowDate(value: Boolean) { viewModelScope.launch { settings.setShowDate(value) } }
     fun setClockStyle(value: String) { viewModelScope.launch { settings.setClockStyle(value) } }
     fun setHapticFeedback(value: Boolean) { viewModelScope.launch { settings.setHapticFeedback(value) } }
+    fun setShowAgenda(value: Boolean) { viewModelScope.launch { settings.setShowAgenda(value) } }
+    fun setShowReminders(value: Boolean) { viewModelScope.launch { settings.setShowReminders(value) } }
+    fun setShowQuickActions(value: Boolean) { viewModelScope.launch { settings.setShowQuickActions(value) } }
+    fun setFocusDefaults(focus: Int, shortBreak: Int, longBreak: Int, rounds: Int) {
+        viewModelScope.launch { settings.setFocusDefaults(focus, shortBreak, longBreak, rounds) }
+    }
 }

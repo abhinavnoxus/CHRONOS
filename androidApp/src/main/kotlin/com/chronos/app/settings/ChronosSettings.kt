@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -45,7 +46,14 @@ data class ChronosPreferences(
     val showSeconds: Boolean = true,
     val showDate: Boolean = true,
     val clockStyle: String = "hybrid",
-    val hapticFeedback: Boolean = true
+    val hapticFeedback: Boolean = true,
+    val showAgenda: Boolean = true,
+    val showReminders: Boolean = true,
+    val showQuickActions: Boolean = true,
+    val defaultFocusMinutes: Int = 25,
+    val defaultBreakMinutes: Int = 5,
+    val defaultLongBreakMinutes: Int = 15,
+    val sessionsBeforeLongBreak: Int = 4
 ) {
     companion object {
         val Default = ChronosPreferences()
@@ -71,6 +79,13 @@ class ChronosSettings @Inject constructor(
         val showDate = booleanPreferencesKey("show_date")
         val clockStyle = stringPreferencesKey("clock_style")
         val hapticFeedback = booleanPreferencesKey("haptic_feedback")
+        val showAgenda = booleanPreferencesKey("home_show_agenda")
+        val showReminders = booleanPreferencesKey("home_show_reminders")
+        val showQuickActions = booleanPreferencesKey("home_show_quick_actions")
+        val defaultFocusMinutes = intPreferencesKey("default_focus_minutes")
+        val defaultBreakMinutes = intPreferencesKey("default_break_minutes")
+        val defaultLongBreakMinutes = intPreferencesKey("default_long_break_minutes")
+        val sessionsBeforeLongBreak = intPreferencesKey("sessions_before_long_break")
         val useWallpaperColors = booleanPreferencesKey("use_wallpaper_colors")
         val dashboardOrder = stringPreferencesKey("dashboard_order")
         val focusActive = booleanPreferencesKey("focus_active")
@@ -182,7 +197,14 @@ class ChronosSettings @Inject constructor(
             showSeconds = values[Keys.showSeconds] ?: ChronosPreferences.Default.showSeconds,
             showDate = values[Keys.showDate] ?: ChronosPreferences.Default.showDate,
             clockStyle = storedClockStyle ?: ChronosPreferences.Default.clockStyle,
-            hapticFeedback = values[Keys.hapticFeedback] ?: ChronosPreferences.Default.hapticFeedback
+            hapticFeedback = values[Keys.hapticFeedback] ?: ChronosPreferences.Default.hapticFeedback,
+            showAgenda = values[Keys.showAgenda] ?: true,
+            showReminders = values[Keys.showReminders] ?: true,
+            showQuickActions = values[Keys.showQuickActions] ?: true,
+            defaultFocusMinutes = (values[Keys.defaultFocusMinutes] ?: 25).coerceIn(5, 180),
+            defaultBreakMinutes = (values[Keys.defaultBreakMinutes] ?: 5).coerceIn(1, 30),
+            defaultLongBreakMinutes = (values[Keys.defaultLongBreakMinutes] ?: 15).coerceIn(5, 60),
+            sessionsBeforeLongBreak = (values[Keys.sessionsBeforeLongBreak] ?: 4).coerceIn(2, 8)
         )
     }
 
@@ -196,6 +218,15 @@ class ChronosSettings @Inject constructor(
     suspend fun setShowDate(value: Boolean) = dataStore.edit { it[Keys.showDate] = value }
     suspend fun setClockStyle(value: String) = dataStore.edit { it[Keys.clockStyle] = value }
     suspend fun setHapticFeedback(value: Boolean) = dataStore.edit { it[Keys.hapticFeedback] = value }
+    suspend fun setShowAgenda(value: Boolean) = dataStore.edit { it[Keys.showAgenda] = value }
+    suspend fun setShowReminders(value: Boolean) = dataStore.edit { it[Keys.showReminders] = value }
+    suspend fun setShowQuickActions(value: Boolean) = dataStore.edit { it[Keys.showQuickActions] = value }
+    suspend fun setFocusDefaults(focus: Int, shortBreak: Int, longBreak: Int, rounds: Int) = dataStore.edit {
+        it[Keys.defaultFocusMinutes] = focus.coerceIn(5, 180)
+        it[Keys.defaultBreakMinutes] = shortBreak.coerceIn(1, 30)
+        it[Keys.defaultLongBreakMinutes] = longBreak.coerceIn(5, 60)
+        it[Keys.sessionsBeforeLongBreak] = rounds.coerceIn(2, 8)
+    }
 
     // Kept for forward-compatible dashboard customization; no current card is hidden by default.
     val dashboardOrder: Flow<String> = dataStore.data.map { it[Keys.dashboardOrder] ?: "clock,next_alarm,quick_actions" }

@@ -28,42 +28,33 @@ class CalendarSyncManager @Inject constructor(
         }.timeInMillis
         val windowEnd = dayStart + DAYS_TO_SYNC * 24L * 60L * 60L * 1_000L
         val projection = arrayOf(
-            CalendarContract.Events._ID,
-            CalendarContract.Events.CALENDAR_ID,
-            CalendarContract.Events.TITLE,
-            CalendarContract.Events.DESCRIPTION,
-            CalendarContract.Events.EVENT_LOCATION,
-            CalendarContract.Events.DTSTART,
-            CalendarContract.Events.DTEND,
-            CalendarContract.Events.ALL_DAY,
-            CalendarContract.Events.EVENT_COLOR,
-            CalendarContract.Events.HAS_ALARM,
-            CalendarContract.Events.RRULE
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.DESCRIPTION,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
+            CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.EVENT_COLOR,
+            CalendarContract.Instances.RRULE
         )
-        // Include events already in progress, not only events whose start is still in the future.
-        val selection = "${CalendarContract.Events.DTEND} >= ? AND ${CalendarContract.Events.DTSTART} <= ? AND ${CalendarContract.Events.DELETED} = 0"
-        val arguments = arrayOf(dayStart.toString(), windowEnd.toString())
+        // Instances expands recurrences and uses occurrence boundaries, including in-progress events.
         val events = mutableListOf<CalendarEvent>()
-
-        val cursor: Cursor? = context.contentResolver.query(
-            CalendarContract.Events.CONTENT_URI,
-            projection,
-            selection,
-            arguments,
-            "${CalendarContract.Events.DTSTART} ASC"
-        )
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(dayStart.toString()).appendPath(windowEnd.toString()).build()
+        val cursor: Cursor? = context.contentResolver.query(uri, projection, null, null, "startDay ASC, begin ASC")
         cursor?.use { result ->
-            val id = result.getColumnIndexOrThrow(CalendarContract.Events._ID)
-            val calendarId = result.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID)
-            val title = result.getColumnIndexOrThrow(CalendarContract.Events.TITLE)
-            val description = result.getColumnIndexOrThrow(CalendarContract.Events.DESCRIPTION)
-            val location = result.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION)
-            val start = result.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)
-            val end = result.getColumnIndexOrThrow(CalendarContract.Events.DTEND)
-            val allDay = result.getColumnIndexOrThrow(CalendarContract.Events.ALL_DAY)
-            val color = result.getColumnIndexOrThrow(CalendarContract.Events.EVENT_COLOR)
-            val hasAlarm = result.getColumnIndexOrThrow(CalendarContract.Events.HAS_ALARM)
-            val rule = result.getColumnIndexOrThrow(CalendarContract.Events.RRULE)
+            val id = result.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)
+            val calendarId = result.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_ID)
+            val title = result.getColumnIndexOrThrow(CalendarContract.Instances.TITLE)
+            val description = result.getColumnIndexOrThrow(CalendarContract.Instances.DESCRIPTION)
+            val location = result.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION)
+            val start = result.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN)
+            val end = result.getColumnIndexOrThrow(CalendarContract.Instances.END)
+            val allDay = result.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)
+            val color = result.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_COLOR)
+            val rule = result.getColumnIndexOrThrow(CalendarContract.Instances.RRULE)
 
             while (result.moveToNext()) {
                 events += CalendarEvent(
@@ -76,7 +67,7 @@ class CalendarSyncManager @Inject constructor(
                     endTime = result.getLong(end),
                     allDay = result.getInt(allDay) != 0,
                     color = if (result.isNull(color)) 0xFFC6A36B.toInt() else result.getInt(color),
-                    hasAlarm = result.getInt(hasAlarm) != 0,
+                    hasAlarm = false,
                     isRecurring = !result.getString(rule).isNullOrBlank()
                 )
             }

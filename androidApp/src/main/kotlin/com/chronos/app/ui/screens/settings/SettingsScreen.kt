@@ -32,7 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.chronos.app.alarm.AlarmViewModel
+import com.chronos.app.BuildConfig
 import com.chronos.app.alarm.service.AlarmPlaybackService
 import com.chronos.app.settings.SettingsViewModel
 import com.chronos.app.theme.LocalChronosPalette
@@ -68,7 +69,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val palette = LocalChronosPalette.current
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val alarmViewModel: AlarmViewModel = hiltViewModel()
-    val preferences by settingsViewModel.preferences.collectAsState()
+    val preferences by settingsViewModel.preferences.collectAsStateWithLifecycle()
     var resumeCount by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -144,6 +145,34 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
         item {
+            SettingsSection(title = "Home layout", icon = Icons.Default.Schedule) {
+                SettingToggle("Upcoming agenda", "Show calendar events on Home", preferences.showAgenda, settingsViewModel::setShowAgenda)
+                SettingToggle("Reminders", "Show your next reminders on Home", preferences.showReminders, settingsViewModel::setShowReminders)
+                SettingToggle("Quick actions", "Show navigation shortcuts", preferences.showQuickActions, settingsViewModel::setShowQuickActions)
+                SettingToggle("Haptic feedback", "Use subtle feedback for primary controls", preferences.hapticFeedback, settingsViewModel::setHapticFeedback)
+            }
+        }
+        item {
+            SettingsSection(title = "Focus defaults", icon = Icons.Default.Schedule) {
+                SettingLabel("Focus length")
+                ChoiceRow(listOf(25, 45, 60, 90).map { it.toString() to "$it min" }, preferences.defaultFocusMinutes.toString()) {
+                    settingsViewModel.setFocusDefaults(it.toInt(), preferences.defaultBreakMinutes, preferences.defaultLongBreakMinutes, preferences.sessionsBeforeLongBreak)
+                }
+                SettingLabel("Short break")
+                ChoiceRow(listOf(5, 10, 15).map { it.toString() to "$it min" }, preferences.defaultBreakMinutes.toString()) {
+                    settingsViewModel.setFocusDefaults(preferences.defaultFocusMinutes, it.toInt(), preferences.defaultLongBreakMinutes, preferences.sessionsBeforeLongBreak)
+                }
+                SettingLabel("Long break")
+                ChoiceRow(listOf(15, 20, 30).map { it.toString() to "$it min" }, preferences.defaultLongBreakMinutes.toString()) {
+                    settingsViewModel.setFocusDefaults(preferences.defaultFocusMinutes, preferences.defaultBreakMinutes, it.toInt(), preferences.sessionsBeforeLongBreak)
+                }
+                SettingLabel("Intervals before a long break")
+                ChoiceRow(listOf(2, 3, 4, 6).map { it.toString() to it }, preferences.sessionsBeforeLongBreak.toString()) {
+                    settingsViewModel.setFocusDefaults(preferences.defaultFocusMinutes, preferences.defaultBreakMinutes, preferences.defaultLongBreakMinutes, it.toInt())
+                }
+            }
+        }
+        item {
             SettingsSection(title = "Alarm Guard", icon = Icons.Default.Security) {
                 Text(
                     text = when {
@@ -178,7 +207,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
         item {
             SettingsSection(title = "About", icon = Icons.Default.Security) {
-                Text("CHRONOS 3.0", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+                Text("CHRONOS ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
                 Text("Personal time tools stored on this device.", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
             }
         }

@@ -123,6 +123,12 @@ interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE isCompleted = 0 ORDER BY scheduledTime ASC")
     fun getActiveReminders(): Flow<List<Reminder>>
 
+    @Query("SELECT * FROM reminders")
+    suspend fun getAllRemindersSnapshot(): List<Reminder>
+
+    @Query("SELECT * FROM reminders WHERE id = :id")
+    suspend fun getReminderById(id: Long): Reminder?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReminder(reminder: Reminder): Long
 
@@ -212,3 +218,15 @@ interface AlarmHistoryDao {
     @Query("DELETE FROM alarm_history WHERE timestamp < :before")
     suspend fun deleteOlderThan(before: Long)
 }
+
+
+@Dao
+interface RoutineDao {
+    @Query("SELECT * FROM routines ORDER BY hour, minute") fun observeAll(): Flow<List<Routine>>
+    @Query("SELECT * FROM routines") suspend fun getAll(): List<Routine>
+    @Query("SELECT * FROM routines WHERE id = :id") suspend fun getById(id: Long): Routine?
+    @Insert suspend fun insert(routine: Routine): Long
+    @Update suspend fun update(routine: Routine)
+    @Query("DELETE FROM routines WHERE id = :id") suspend fun delete(id: Long)
+}
+

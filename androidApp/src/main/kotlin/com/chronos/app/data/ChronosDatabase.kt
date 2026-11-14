@@ -19,9 +19,10 @@ import com.chronos.app.data.model.*
         StopwatchLap::class,
         WorldClock::class,
         FocusSession::class,
-        AlarmHistory::class
+        AlarmHistory::class,
+        Routine::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -35,6 +36,7 @@ abstract class ChronosDatabase : RoomDatabase() {
     abstract fun worldClockDao(): WorldClockDao
     abstract fun focusSessionDao(): FocusSessionDao
     abstract fun alarmHistoryDao(): AlarmHistoryDao
+    abstract fun routineDao(): RoutineDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -63,6 +65,18 @@ abstract class ChronosDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `routines` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `title` TEXT NOT NULL, `note` TEXT NOT NULL,
+                    `hour` INTEGER NOT NULL, `minute` INTEGER NOT NULL,
+                    `repeatDays` INTEGER NOT NULL, `isEnabled` INTEGER NOT NULL,
+                    `createdAt` INTEGER NOT NULL
+                )""".trimIndent())
+            }
+        }
+
         @Volatile
         private var INSTANCE: ChronosDatabase? = null
 
@@ -73,7 +87,7 @@ abstract class ChronosDatabase : RoomDatabase() {
                     ChronosDatabase::class.java,
                     "chronos_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     // Never fall back to a destructive migration: local alarm data is user data.
                     .build()
                     .also { INSTANCE = it }

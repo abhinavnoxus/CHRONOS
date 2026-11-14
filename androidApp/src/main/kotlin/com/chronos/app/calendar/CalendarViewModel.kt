@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -17,7 +18,8 @@ import javax.inject.Inject
 @HiltViewModel
 class CalendarViewModel @Inject constructor(
     private val calendarSyncManager: CalendarSyncManager,
-    private val calendarEventDao: CalendarEventDao
+    private val calendarEventDao: CalendarEventDao,
+    private val database: com.chronos.app.data.ChronosDatabase
 ) : ViewModel() {
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
@@ -35,7 +37,7 @@ class CalendarViewModel @Inject constructor(
             _error.value = null
             try {
                 val fetched = withContext(Dispatchers.IO) { calendarSyncManager.fetchUpcomingEvents() }
-                withContext(Dispatchers.IO) {
+                androidx.room.withTransaction(database) {
                     calendarEventDao.deleteAll()
                     if (fetched.isNotEmpty()) calendarEventDao.insertAll(fetched)
                 }

@@ -98,6 +98,8 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name=".reminders.ReminderReceiver" android:exported="false" />
+
         <!-- ═══════════════════════════════════════════════════════
              ALARM PLAYBACK SERVICE (Foreground)
              ═══════════════════════════════════════════════════════ -->

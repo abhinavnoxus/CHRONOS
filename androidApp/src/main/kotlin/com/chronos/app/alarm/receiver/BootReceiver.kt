@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.chronos.app.alarm.engine.AlarmRuntimeController
+import com.chronos.app.reminders.ReminderRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var runtimeController: AlarmRuntimeController
+    @Inject lateinit var reminderRepository: ReminderRepository
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
@@ -34,6 +36,7 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 if (isDeviceStart) runtimeController.recoverAfterBoot()
                 else runtimeController.rescheduleSchedules()
+                reminderRepository.reconcile()
                 Log.i(TAG, "Alarm schedules reconciled after $action")
             } catch (exception: Exception) {
                 Log.e(TAG, "Alarm recovery failed after $action", exception)

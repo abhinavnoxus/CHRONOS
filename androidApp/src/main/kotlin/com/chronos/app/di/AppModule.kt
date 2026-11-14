@@ -7,6 +7,7 @@ import com.chronos.app.data.CalendarEventDao
 import com.chronos.app.data.ChronosDatabase
 import com.chronos.app.data.FocusSessionDao
 import com.chronos.app.data.ReminderDao
+import com.chronos.app.data.RoutineDao
 import com.chronos.app.data.StopwatchLapDao
 import com.chronos.app.data.TimerDao
 import com.chronos.app.data.WorldClockDao
@@ -30,6 +31,7 @@ object AppModule {
     @Provides fun provideAlarmDao(db: ChronosDatabase): AlarmDao = db.alarmDao()
     @Provides fun provideCalendarEventDao(db: ChronosDatabase): CalendarEventDao = db.calendarEventDao()
     @Provides fun provideReminderDao(db: ChronosDatabase): ReminderDao = db.reminderDao()
+    @Provides fun provideRoutineDao(db: ChronosDatabase): RoutineDao = db.routineDao()
     @Provides fun provideTimerDao(db: ChronosDatabase): TimerDao = db.timerDao()
     @Provides fun provideStopwatchLapDao(db: ChronosDatabase): StopwatchLapDao = db.stopwatchLapDao()
     @Provides fun provideWorldClockDao(db: ChronosDatabase): WorldClockDao = db.worldClockDao()
