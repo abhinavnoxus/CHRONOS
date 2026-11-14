@@ -17,7 +17,9 @@ class AlarmSchedulerTest {
     @Test fun exactPermissionDenialUsesInexactFallbackWithoutLosingAlarm() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val manager = context.getSystemService(AlarmManager::class.java)
-        shadowOf(manager).setCanScheduleExactAlarms(false)
+        val field = shadowOf(manager).javaClass.getDeclaredField("canScheduleExactAlarms")
+        field.isAccessible = true
+        field.setBoolean(shadowOf(manager), false)
         val scheduler = AlarmScheduler(context)
         val alarm = Alarm(id = 10, hour = 23, minute = 59)
         assertTrue(scheduler.scheduleAlarm(alarm))
