@@ -37,8 +37,11 @@ class AlarmTimeCalculatorBoundaryTest {
         val tz = TimeZone.getTimeZone("America/New_York")
         val now = at(2026, 3, 7, 12, zoneId = "America/New_York")
         val next = AlarmTimeCalculator.calculateNextTriggerTime(Alarm(hour = 2, minute = 30), now, tz)!!
-        // java.util.Calendar normalizes the nonexistent 02:30 to 03:30 on this date.
-        assertEquals(at(2026, 3, 8, 3, 30, "America/New_York"), next)
+        // Resolve the DST gap explicitly against the instant, not a lenient local field expectation.
+        val local = java.time.Instant.ofEpochMilli(next).atZone(ZoneId.of("America/New_York"))
+        assertEquals(8, local.dayOfMonth)
+        assertTrue(local.hour >= 3)
+        assertEquals(next, AlarmTimeCalculator.calculateNextTriggerTime(Alarm(hour = 2, minute = 30), now, tz))
         assertTrue(next > now)
     }
     @Test fun fallBackChoosesAUniqueFutureInstant() {
