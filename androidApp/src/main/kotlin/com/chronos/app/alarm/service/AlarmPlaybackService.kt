@@ -27,6 +27,7 @@ import com.chronos.app.alarm.engine.AlarmIdentity
 import com.chronos.app.alarm.engine.AlarmRuntimeController
 import com.chronos.app.alarm.engine.AlarmRuntimeStore
 import com.chronos.app.alarm.engine.AlarmScheduler
+import com.chronos.app.alarm.ui.AlarmRingingActivity
 import com.chronos.app.alarm.receiver.AlarmDismissReceiver
 import com.chronos.app.alarm.receiver.AlarmSnoozeReceiver
 import dagger.hilt.android.AndroidEntryPoint
