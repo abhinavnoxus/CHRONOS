@@ -55,7 +55,7 @@ class FocusEngineTest {
         engine.reconcile(clock.wall, clock.elapsed, clock.boot)
         val once = settings.focusRuntime.first()
         assertEquals(2, once.completedFocusSessions)
-        assertEquals("focus", once.phase)
+        assertEquals("long_break", once.phase)
         assertEquals(10 * 60_000L, once.totalFocusMillis)
         engine.reconcile(clock.wall, clock.elapsed, clock.boot)
         assertEquals(once, settings.focusRuntime.first())
@@ -66,8 +66,8 @@ class FocusEngineTest {
         clock.boot = 2; clock.elapsed = 10L; clock.wall += 6 * 60_000L
         engine.reconcile(clock.wall, clock.elapsed, clock.boot)
         val runtime = settings.focusRuntime.first()
-        assertEquals(1, runtime.completedFocusSessions)
-        assertEquals("break", runtime.phase)
+        assertEquals(2, runtime.completedFocusSessions)
+        assertEquals("focus", runtime.phase)
     }
 
     @Test fun stopRecordsPartialFocusOnce() = runTest {

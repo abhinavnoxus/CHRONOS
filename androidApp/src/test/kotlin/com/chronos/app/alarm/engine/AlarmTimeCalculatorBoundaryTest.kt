@@ -40,7 +40,8 @@ class AlarmTimeCalculatorBoundaryTest {
         // Resolve the DST gap explicitly against the instant, not a lenient local field expectation.
         val local = java.time.Instant.ofEpochMilli(next).atZone(ZoneId.of("America/New_York"))
         assertEquals(8, local.dayOfMonth)
-        assertTrue(local.hour >= 3)
+        assertEquals(3, local.hour)
+        assertEquals(30, local.minute)
         assertEquals(next, AlarmTimeCalculator.calculateNextTriggerTime(Alarm(hour = 2, minute = 30), now, tz))
         assertTrue(next > now)
     }
