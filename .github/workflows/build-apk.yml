@@ -69,6 +69,29 @@ jobs:
           if [[ -f "$release" ]]; then cp "$release" "artifacts/CHRONOS-v4-${GITHUB_SHA::7}-release.apk"; fi
           sha256sum artifacts/* > artifacts/SHA256SUMS.txt
 
+      - name: Publish verification evidence
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import base64, glob, hashlib, json, os, xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in glob.glob('androidApp/build/test-results/testDebugUnitTest/TEST-*.xml'):
+              root = ET.parse(path).getroot()
+              for key in totals: totals[key] += int(root.attrib.get(key, 0))
+          artifacts = []
+          for path in glob.glob('artifacts/*'):
+              if os.path.isfile(path): artifacts.append(dict(file=path, bytes=os.path.getsize(path), sha256=hashlib.sha256(open(path,'rb').read()).hexdigest()))
+          evidence = dict(unit_tests=totals, artifacts=artifacts)
+          print(json.dumps(evidence, indent=2))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out: out.write('## V4 verification\n```json\n' + json.dumps(evidence, indent=2) + '\n```\n')
+          print('::notice title=Verification evidence (base64)::' + base64.b64encode(json.dumps(evidence).encode()).decode())
+          lint = 'androidApp/build/reports/lint-results-debug.xml'
+          if os.path.exists(lint):
+              issues = ET.parse(lint).getroot().findall('issue')
+              summary = [dict(id=i.attrib.get('id'), severity=i.attrib.get('severity'), message=i.attrib.get('message')) for i in issues]
+              print('::notice title=Lint findings (base64)::' + base64.b64encode(json.dumps(summary).encode()).decode())
+          PY
+
       - name: Surface concise Gradle failure details
         if: failure()
         run: |
