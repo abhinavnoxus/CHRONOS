@@ -22,4 +22,9 @@ class ReminderScheduleTest {
         assertNotEquals(ReminderScheduler.request(1, false), ReminderScheduler.request(1, true))
         assertNotEquals(ReminderScheduler.notificationId(1, false), ReminderScheduler.notificationId(1, true))
     }
+    @Test fun overdueRecurringReminderSkipsToFutureWithoutOverflow() {
+        val item = com.chronos.app.data.model.Reminder(title = "Hydrate", scheduledTime = 1000L, isRecurring = true, repeatInterval = 60_000L)
+        assertEquals(1_861_000L, ReminderRecurrence.next(item, 1_800_000L))
+        assertNull(ReminderRecurrence.next(item.copy(scheduledTime = Long.MAX_VALUE - 10, repeatInterval = Long.MAX_VALUE / 2), Long.MAX_VALUE - 1))
+    }
 }

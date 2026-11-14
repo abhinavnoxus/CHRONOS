@@ -52,7 +52,9 @@ class ReminderReceiver : BroadcastReceiver() {
                     nextRoutineTime(item)?.let { scheduler.scheduleRoutine(item, it) }
                 } else {
                     val item = database.reminderDao().getReminderById(id) ?: return@launch
-                    if (item.isCompleted || item.scheduledTime != at) return@launch
+                    if (item.isCompleted) return@launch
+                    val expected = ReminderRecurrence.next(item, at - 1)
+                    if (expected != at) return@launch // Ignore stale/edit-replaced notification schedules.
                     title = item.title; message = item.description.ifBlank { "CHRONOS reminder" }
                     if (item.isRecurring && item.repeatInterval > 0L) {
                         var next = item.scheduledTime + item.repeatInterval

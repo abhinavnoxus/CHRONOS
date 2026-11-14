@@ -21,7 +21,8 @@ class ReminderScheduler @Inject constructor(@ApplicationContext private val cont
     fun schedule(reminder: Reminder): Boolean {
         cancel(reminder.id)
         if (reminder.isCompleted || reminder.scheduledTime <= System.currentTimeMillis()) return false
-        return scheduleAt(reminder.scheduledTime, pendingIntent(reminder.id, reminder.title, reminder.scheduledTime, false))
+        val next = if (reminder.isRecurring && reminder.repeatInterval >= 60_000L) ReminderRecurrence.next(reminder, System.currentTimeMillis()) ?: return false else reminder.scheduledTime
+        return scheduleAt(next, pendingIntent(reminder.id, reminder.title, next, false))
     }
 
     fun scheduleRoutine(routine: Routine, triggerAt: Long): Boolean {

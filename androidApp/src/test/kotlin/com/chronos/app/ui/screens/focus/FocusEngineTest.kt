@@ -34,6 +34,7 @@ class FocusEngineTest {
         settings = ChronosSettings(context)
         clock = TestClock()
         engine = FocusEngine(settings, db.focusSessionDao(), clock)
+        kotlinx.coroutines.runBlocking { settings.clearFocusRuntime() }
     }
     @After fun tearDown() { db.close() }
 
@@ -67,7 +68,7 @@ class FocusEngineTest {
         engine.reconcile(clock.wall, clock.elapsed, clock.boot)
         val runtime = settings.focusRuntime.first()
         assertEquals(2, runtime.completedFocusSessions)
-        assertEquals("focus", runtime.phase)
+        assertEquals("long_break", runtime.phase)
     }
 
     @Test fun stopRecordsPartialFocusOnce() = runTest {
