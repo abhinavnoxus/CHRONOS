@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.catch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -106,7 +107,9 @@ class ChronosSettings @Inject constructor(
         val focusSessionId = longPreferencesKey("focus_session_id")
     }
 
-    val focusRuntime: Flow<FocusRuntime> = dataStore.data.map { values ->
+    val focusRuntime: Flow<FocusRuntime> = dataStore.data.catch { error ->
+        if (error is java.io.IOException) emit(androidx.datastore.preferences.core.emptyPreferences()) else throw error
+    }.map { values ->
         FocusRuntime(
             isActive = values[Keys.focusActive] ?: false,
             isPaused = values[Keys.focusPaused] ?: false,
@@ -169,7 +172,9 @@ class ChronosSettings @Inject constructor(
         }
     }
 
-    val preferences: Flow<ChronosPreferences> = dataStore.data.map { values ->
+    val preferences: Flow<ChronosPreferences> = dataStore.data.catch { error ->
+        if (error is java.io.IOException) emit(androidx.datastore.preferences.core.emptyPreferences()) else throw error
+    }.map { values ->
         val legacyAccent = when (values[Keys.legacyAccentColor]?.lowercase()) {
             "gold" -> 0xFFD4A853L
             "blue" -> 0xFF5B7FA5L

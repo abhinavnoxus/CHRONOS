@@ -37,9 +37,6 @@ interface AlarmDao {
     @Delete
     suspend fun deleteAlarm(alarm: Alarm)
 
-    @Query("DELETE FROM alarm_instances WHERE alarmId = :alarmId AND state = 'snoozed'")
-    suspend fun removePendingSnoozes(alarmId: Long)
-
     @Query("DELETE FROM alarms WHERE id = :id")
     suspend fun deleteAlarmById(id: Long)
 
@@ -58,6 +55,10 @@ interface AlarmDao {
 
 @Dao
 interface AlarmInstanceDao {
+    @Query("DELETE FROM alarm_instances WHERE alarmId = :alarmId AND state = 'snoozed'")
+    suspend fun removePendingSnoozes(alarmId: Long)
+
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(instance: AlarmInstance): Long
 
