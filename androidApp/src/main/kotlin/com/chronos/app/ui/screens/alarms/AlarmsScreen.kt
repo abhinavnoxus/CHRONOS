@@ -90,6 +90,7 @@ fun AlarmsScreen() {
     val error by viewModel.errorMessage.collectAsStateWithLifecycle()
     var editTarget by remember { mutableStateOf<Alarm?>(null) }
     var isCreating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<Alarm?>(null) }
     var resumeCount by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -206,11 +207,15 @@ fun AlarmsScreen() {
                 isCreating = false
                 editTarget = null
             },
-            onDelete = { alarm ->
-                viewModel.deleteAlarm(alarm)
-                editTarget = null
-            }
+            onDelete = { alarm -> deleting = alarm }
         )
+    }
+
+    deleting?.let { alarm ->
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Delete this alarm?") },
+            text = { Text("${alarm.label.ifBlank { "This alarm" }} at ${alarm.formatTime(is24Hour)} will be removed. This cannot be undone.") },
+            confirmButton = { TextButton(onClick = { viewModel.deleteAlarm(alarm); deleting = null; editTarget = null }) { Text("Delete", color = palette.statusError) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Keep") } })
     }
 
     error?.let { message ->
@@ -306,6 +311,9 @@ private fun AlarmEditorDialog(
     var ringtoneUri by remember(initial?.id) { mutableStateOf(initial?.ringtoneUri) }
     var vibrate by remember(initial?.id) { mutableStateOf(initial?.vibrate ?: true) }
     var snoozeMinutes by remember(initial?.id) { mutableIntStateOf(initial?.snoozeMinutes ?: 5) }
+    var gradual by remember(initial?.id) { mutableStateOf(initial?.gradualVolume ?: true) }
+    var volume by remember(initial?.id) { mutableStateOf(initial?.volume ?: 0.8f) }
+    var oneTimeDate by remember(initial?.id) { mutableStateOf(initial?.oneTimeDate) }
 
     val ringtonePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
@@ -350,6 +358,22 @@ private fun AlarmEditorDialog(
                         )
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        val date = java.util.Calendar.getInstance().apply { oneTimeDate?.let { timeInMillis = it } }
+                        android.app.DatePickerDialog(context, { _, y, m, d ->
+                            oneTimeDate = java.util.Calendar.getInstance().apply { set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                            repeatDays = 0
+                        }, date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DAY_OF_MONTH)).show()
+                    }) { Text(oneTimeDate?.let { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "Choose date (optional)") }
+                    if (oneTimeDate != null) TextButton(onClick = { oneTimeDate = null }) { Text("Clear") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Gradual volume", style = MaterialTheme.typography.bodyMedium, color = palette.textPrimary, modifier = Modifier.weight(1f))
+                    Switch(checked = gradual, onCheckedChange = { gradual = it })
+                }
+                Text("Volume · ${(volume * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
+                androidx.compose.material3.Slider(value = volume, onValueChange = { volume = it }, valueRange = 0.1f..1f)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Vibrate", style = MaterialTheme.typography.bodyMedium, color = palette.textPrimary, modifier = Modifier.weight(1f))
                     Switch(checked = vibrate, onCheckedChange = { vibrate = it })
@@ -387,6 +411,9 @@ private fun AlarmEditorDialog(
                         repeatDays = repeatDays,
                         ringtoneUri = ringtoneUri,
                         vibrate = vibrate,
+                        gradualVolume = gradual,
+                        volume = volume,
+                        oneTimeDate = oneTimeDate,
                         snoozeMinutes = snoozeMinutes,
                         isEnabled = initial?.isEnabled ?: true,
                         isRinging = false

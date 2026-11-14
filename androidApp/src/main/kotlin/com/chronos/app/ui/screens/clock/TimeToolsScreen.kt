@@ -115,6 +115,7 @@ private fun TimersPane() {
     if (creating) TimerEditor({ creating = false }, { label, minutes -> viewModel.startTimer(label, minutes); creating = false })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimerEditor(onDismiss: () -> Unit, onSave: (String, Int) -> Unit) {
     var label by remember { mutableStateOf("") }

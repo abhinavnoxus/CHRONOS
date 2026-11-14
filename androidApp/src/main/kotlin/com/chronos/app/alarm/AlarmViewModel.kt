@@ -56,7 +56,10 @@ class AlarmViewModel @Inject constructor(
                 val saved = alarm.copy(id = id, isRinging = false)
                 ChronosWidgetProvider.requestUpdate(context)
                 if (saved.isEnabled && !alarmScheduler.scheduleAlarm(saved)) {
-                    _errorMessage.value = "The alarm was saved, but Android did not accept its schedule. Check Alarm Guard."
+                    if (saved.oneTimeDate != null && alarmScheduler.calculateNextTriggerTime(saved) == null) {
+                        alarmDao.setAlarmEnabled(id, false)
+                        _errorMessage.value = "That date has passed. The alarm was saved but switched off; choose a future date to enable it."
+                    } else _errorMessage.value = "The alarm was saved, but Android did not accept its schedule. Check Alarm Guard."
                 }
             } catch (exception: Exception) {
                 Log.e(TAG, "Could not create alarm", exception)
@@ -73,7 +76,10 @@ class AlarmViewModel @Inject constructor(
                 ChronosWidgetProvider.requestUpdate(context)
                 if (updated.isEnabled) {
                     if (!alarmScheduler.scheduleAlarm(updated)) {
-                        _errorMessage.value = "The alarm was saved, but Android did not accept its schedule. Check Alarm Guard."
+                        if (updated.oneTimeDate != null && alarmScheduler.calculateNextTriggerTime(updated) == null) {
+                            alarmDao.setAlarmEnabled(updated.id, false)
+                            _errorMessage.value = "That date has passed. The alarm was switched off; choose a future date to enable it."
+                        } else _errorMessage.value = "The alarm was saved, but Android did not accept its schedule. Check Alarm Guard."
                     }
                 } else {
                     alarmScheduler.cancelAlarm(updated.id)

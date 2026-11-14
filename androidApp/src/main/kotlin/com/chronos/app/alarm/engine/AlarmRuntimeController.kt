@@ -50,8 +50,8 @@ class AlarmRuntimeController @Inject constructor(
      * Returns true when a fast mirror was cleared. Never touches another alarm's playback.
      */
     fun stopImmediately(alarmId: Long, instanceId: String): Boolean {
-        val serviceStopped = AlarmPlaybackService.stopForInstance(alarmId, instanceId)
         val storeCleared = runtimeStore.clearIfActive(alarmId, instanceId)
+        val serviceStopped = AlarmPlaybackService.stopForInstance(alarmId, instanceId)
         if (serviceStopped || storeCleared) {
             notificationManager().cancel(AlarmIdentity.notificationId(instanceId))
             finishRingingUi(instanceId)
