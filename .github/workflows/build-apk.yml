@@ -53,10 +53,12 @@ jobs:
           if [[ -z "$apk_path" ]]; then
             diagnostics="$({
               printf 'PWD=%s\nGITHUB_WORKSPACE=%s\n' "$PWD" "$GITHUB_WORKSPACE"
-              printf 'Output directories:\n'
-              find . -maxdepth 10 -type d \( -name outputs -o -name apk \) -print || true
-              printf 'APK/AAB files:\n'
+              printf 'Android app build tree:\n'
+              find androidApp/build -maxdepth 7 -printf '%y %p\n' 2>&1 | tail -n 80 || true
+              printf 'APK/AAB files in workspace:\n'
               find . -maxdepth 12 -type f \( -iname '*.apk' -o -iname '*.aab' \) -print || true
+              printf 'Gradle build tail:\n'
+              tail -n 45 "$RUNNER_TEMP/gradle.log" 2>&1 || true
             } 2>&1)"
             encoded_diagnostics="$(printf '%s' "$diagnostics" | base64 -w0)"
             echo "::error title=APK missing diagnostics (base64)::$encoded_diagnostics"
