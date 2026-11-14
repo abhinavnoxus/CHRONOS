@@ -51,8 +51,15 @@ jobs:
         run: |
           apk_path="$(find . -type f -iname '*.apk' -print -quit || true)"
           if [[ -z "$apk_path" ]]; then
-            echo "No APK was produced. Build output directories:" >&2
-            find . -type d \( -name outputs -o -name apk \) -print >&2 || true
+            diagnostics="$({
+              printf 'PWD=%s\nGITHUB_WORKSPACE=%s\n' "$PWD" "$GITHUB_WORKSPACE"
+              printf 'Output directories:\n'
+              find . -maxdepth 10 -type d \( -name outputs -o -name apk \) -print || true
+              printf 'APK/AAB files:\n'
+              find . -maxdepth 12 -type f \( -iname '*.apk' -o -iname '*.aab' \) -print || true
+            } 2>&1)"
+            encoded_diagnostics="$(printf '%s' "$diagnostics" | base64 -w0)"
+            echo "::error title=APK missing diagnostics (base64)::$encoded_diagnostics"
             exit 1
           fi
           cp "$apk_path" "CHRONOS-v${GITHUB_SHA::7}-debug.apk"
