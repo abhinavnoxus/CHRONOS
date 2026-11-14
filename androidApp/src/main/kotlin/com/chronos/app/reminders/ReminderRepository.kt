@@ -61,6 +61,7 @@ class ReminderRepository @Inject constructor(
     }
 
     private fun scheduleRoutine(routine: Routine) {
-        ReminderReceiver.nextRoutineTime(routine)?.let { scheduler.scheduleRoutine(routine, it) }
+        val next = ReminderReceiver.nextRoutineTime(routine)
+        if (next == null) scheduler.cancelRoutine(routine.id) else scheduler.scheduleRoutine(routine, next)
     }
 }

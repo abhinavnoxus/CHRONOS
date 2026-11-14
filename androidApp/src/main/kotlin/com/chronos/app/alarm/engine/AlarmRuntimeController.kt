@@ -131,9 +131,9 @@ class AlarmRuntimeController @Inject constructor(
      *   DISMISSED tombstone so the pending activation refuses to start audio.
      * - Repeated or stale taps change nothing and create no duplicate history.
      */
-    suspend fun dismiss(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean): Boolean {
+    suspend fun dismiss(alarmId: Long, instanceId: String, scheduledAt: Long, isSnooze: Boolean, ownershipProven: Boolean = false): Boolean {
         if (!isValidInstance(alarmId, instanceId, scheduledAt, isSnooze)) return false
-        val hadRuntimeOwnership = isActive(alarmId, instanceId)
+        val hadRuntimeOwnership = ownershipProven || isActive(alarmId, instanceId)
         stopImmediately(alarmId, instanceId)
         return dismissalMutex.withLock { dismissLocked(alarmId, instanceId, scheduledAt, isSnooze, hadRuntimeOwnership) }
     }

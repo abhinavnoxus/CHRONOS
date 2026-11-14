@@ -130,9 +130,9 @@ class AlarmRingingActivity : ComponentActivity() {
     }
 
     private fun dismiss(alarm: RingingAlarm) {
-        runtimeController.stopImmediately(alarm.id, alarm.instanceId)
+        val owned = runtimeController.stopImmediately(alarm.id, alarm.instanceId)
         applicationScope.launch {
-            try { runtimeController.dismiss(alarm.id, alarm.instanceId, alarm.scheduledAt, alarm.isSnooze) }
+            try { runtimeController.dismiss(alarm.id, alarm.instanceId, alarm.scheduledAt, alarm.isSnooze, ownershipProven = owned) }
             finally { runOnUiThread { finish() } }
         }
         finish()

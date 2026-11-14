@@ -37,17 +37,21 @@ class ReminderReceiver : BroadcastReceiver() {
             try {
                 if (intent.action == ACTION_COMPLETE) {
                     if (!routine) {
+                        val item = database.reminderDao().getReminderById(id) ?: return@launch
+                        // Old notifications must not complete an edited or recurring reminder.
+                        if (item.isRecurring || item.isCompleted || item.scheduledTime != at) return@launch
                         database.reminderDao().markCompleted(id)
                         scheduler.cancel(id)
                         context.getSystemService(NotificationManager::class.java).cancel(ReminderScheduler.notificationId(id, false))
                     }
                     return@launch
                 }
+                if (intent.action != ReminderScheduler.ACTION_REMIND) return@launch
                 val title: String
                 val message: String
                 if (routine) {
                     val item = database.routineDao().getById(id) ?: return@launch
-                    if (!item.isEnabled) return@launch
+                    if (!item.isEnabled || nextRoutineTime(item, at - 1) != at) return@launch
                     title = item.title; message = item.note.ifBlank { "Your routine is due" }
                     nextRoutineTime(item)?.let { scheduler.scheduleRoutine(item, it) }
                 } else {
@@ -62,8 +66,6 @@ class ReminderReceiver : BroadcastReceiver() {
                         if (next <= now) next += ((now - next) / item.repeatInterval + 1) * item.repeatInterval
                         database.reminderDao().updateReminder(item.copy(scheduledTime = next))
                         scheduler.schedule(item.copy(scheduledTime = next))
-                    } else {
-                        database.reminderDao().markCompleted(id)
                     }
                 }
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && android.os.Build.VERSION.SDK_INT >= 33) return@launch
@@ -75,7 +77,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 val builder = NotificationCompat.Builder(context, NotificationHelper.CHANNEL_REMINDER)
                     .setSmallIcon(android.R.drawable.ic_popup_reminder).setContentTitle(title).setContentText(message)
                     .setCategory(NotificationCompat.CATEGORY_REMINDER).setAutoCancel(true).setContentIntent(open)
-                if (!routine) {
+                if (!routine && database.reminderDao().getReminderById(id)?.isRecurring == false) {
                     val complete = PendingIntent.getBroadcast(context, ReminderScheduler.request(id, false),
                         Intent(context, ReminderReceiver::class.java).apply {
                             action = ACTION_COMPLETE; data = Uri.parse("chronos://complete-reminder/$id")

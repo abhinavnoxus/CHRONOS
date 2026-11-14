@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.chronos.app.alarm.engine.AlarmIdentity
 import com.chronos.app.alarm.engine.AlarmRuntimeController
 import com.chronos.app.alarm.engine.AlarmScheduler
 import com.chronos.app.di.ApplicationScope
@@ -23,13 +24,14 @@ class AlarmDismissReceiver : BroadcastReceiver() {
         val instanceId = intent.getStringExtra(AlarmScheduler.EXTRA_INSTANCE_ID).orEmpty()
         val scheduledAt = intent.getLongExtra(AlarmScheduler.EXTRA_SCHEDULED_AT, 0L)
         val isSnooze = intent.getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false)
-        // Stop on the receiver's main thread before scheduling any disk work.
-        runtimeController.stopImmediately(alarmId, instanceId)
+        if (!AlarmIdentity.matches(alarmId, instanceId, scheduledAt, isSnooze)) return
+        // Preserve proof of ownership after silencing, so an early tap can write a tombstone.
+        val owned = runtimeController.stopImmediately(alarmId, instanceId)
         val pendingResult = goAsync()
         applicationScope.launch {
             try {
                 // Always consult the authoritative row, even when no service singleton exists.
-                runtimeController.dismiss(alarmId, instanceId, scheduledAt, isSnooze)
+                runtimeController.dismiss(alarmId, instanceId, scheduledAt, isSnooze, ownershipProven = owned)
             } catch (exception: Exception) {
                 Log.e(TAG, "Could not persist dismissal for $instanceId; audio remains stopped", exception)
             } finally {

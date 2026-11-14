@@ -148,5 +148,16 @@ class AlarmRuntimeControllerTest {
         assertEquals(AlarmInstance.RINGING, db.alarmInstanceDao().getById(instance)?.state)
     }
 
+    @Test fun earlyReceiverStopPreservesOwnershipForTombstone() = runTest {
+        seed()
+        store.activate(1, instance, scheduled, false)
+        val owned = controller.stopImmediately(1, instance)
+        assertTrue(owned)
+        assertTrue(controller.dismiss(1, instance, scheduled, false, ownershipProven = owned))
+        assertEquals(AlarmInstance.DISMISSED, db.alarmInstanceDao().getById(instance)?.state)
+        store.activate(1, instance, scheduled, false)
+        assertFalse(controller.activate(1, instance, scheduled, false))
+    }
+
     private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.firstValue(): T = this.first()
 }
