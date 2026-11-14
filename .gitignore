@@ -1,0 +1,37 @@
+# Built by Android Studio
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# App-level
+/androidApp/build
+/shared/build
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# IDE
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Kotlin
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+
+# Hilt / KSP
+/build/

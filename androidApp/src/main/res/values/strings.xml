@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CHRONOS</string>
+
+    <!-- Notification Channels -->
+    <string name="channel_alarm_name">Alarm Alerts</string>
+    <string name="channel_alarm_desc">Active alarm notifications with ringtone playback</string>
+    <string name="channel_reminder_name">Reminders</string>
+    <string name="channel_reminder_desc">Reminder notifications</string>
+    <string name="channel_suggestion_name">Smart Suggestions</string>
+    <string name="channel_suggestion_desc">Calendar-aware alarm suggestions</string>
+
+    <!-- Alarm Actions -->
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_snooze">Snooze</string>
+    <string name="action_stop">Stop</string>
+
+    <!-- Navigation -->
+    <string name="nav_clock">Clock</string>
+    <string name="nav_schedule">Schedule</string>
+    <string name="nav_alarms">Alarms</string>
+    <string name="nav_settings">Settings</string>
+</resources>
