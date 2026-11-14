@@ -33,12 +33,20 @@ class TimeToolsViewModel @Inject constructor(
     private val database: ChronosDatabase,
     private val worldClockDao: WorldClockDao,
     private val lapDao: StopwatchLapDao,
-    private val timerScheduler: TimerScheduler
+    private val timerScheduler: TimerScheduler,
+    private val stopwatchStore: StopwatchStore
 ) : ViewModel() {
     val timers = database.timerDao().getAllTimers().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val worldClocks = worldClockDao.getAllWorldClocks().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private val _stopwatch = MutableStateFlow(StopwatchState())
+    private val _stopwatch = MutableStateFlow(stopwatchStore.load())
     val stopwatch = _stopwatch.asStateFlow()
+    init {
+        viewModelScope.launch {
+            val state = _stopwatch.value
+            if (state.sessionId != 0L) _stopwatch.value = state.copy(laps = lapDao.getLapsSnapshot(state.sessionId))
+        }
+    }
+    private fun updateStopwatch(state: StopwatchState) { _stopwatch.value = state; stopwatchStore.save(state) }
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
     fun clearError() { _error.value = null }
@@ -71,8 +79,8 @@ class TimeToolsViewModel @Inject constructor(
 
     fun toggleStopwatch() {
         val current = _stopwatch.value
-        _stopwatch.value = if (current.running) current.copy(running = false, accumulated = current.elapsed())
-        else current.copy(running = true, baseElapsed = SystemClock.elapsedRealtime(), sessionId = if (current.sessionId == 0L) System.currentTimeMillis() else current.sessionId)
+        updateStopwatch(if (current.running) current.copy(running = false, accumulated = current.elapsed())
+        else current.copy(running = true, baseElapsed = SystemClock.elapsedRealtime(), sessionId = if (current.sessionId == 0L) System.currentTimeMillis() else current.sessionId))
     }
     fun lap() {
         val current = _stopwatch.value
@@ -80,12 +88,12 @@ class TimeToolsViewModel @Inject constructor(
         val total = current.elapsed()
         val lap = StopwatchLap(sessionId = current.sessionId, lapNumber = current.laps.size + 1,
             lapTime = total - (current.laps.lastOrNull()?.totalTime ?: 0L), totalTime = total)
-        _stopwatch.value = current.copy(laps = current.laps + lap)
+        updateStopwatch(current.copy(laps = current.laps + lap))
         viewModelScope.launch { runCatching { lapDao.insertLap(lap) }.onFailure { _error.value = "Lap shown but could not be saved" } }
     }
     fun resetStopwatch() {
         val old = _stopwatch.value
-        _stopwatch.value = StopwatchState()
+        updateStopwatch(StopwatchState())
         viewModelScope.launch { lapDao.deleteLapsForSession(old.sessionId) }
     }
     fun addWorldClock(city: String, zone: String) = viewModelScope.launch {

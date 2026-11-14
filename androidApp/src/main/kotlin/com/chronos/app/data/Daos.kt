@@ -37,6 +37,9 @@ interface AlarmDao {
     @Delete
     suspend fun deleteAlarm(alarm: Alarm)
 
+    @Query("DELETE FROM alarm_instances WHERE alarmId = :alarmId AND state = 'snoozed'")
+    suspend fun removePendingSnoozes(alarmId: Long)
+
     @Query("DELETE FROM alarms WHERE id = :id")
     suspend fun deleteAlarmById(id: Long)
 
@@ -169,6 +172,9 @@ interface StopwatchLapDao {
 
     @Query("SELECT * FROM stopwatch_laps WHERE sessionId = :sessionId ORDER BY lapNumber ASC")
     fun getLapsForSession(sessionId: Long): Flow<List<StopwatchLap>>
+
+    @Query("SELECT * FROM stopwatch_laps WHERE sessionId = :sessionId ORDER BY lapNumber ASC")
+    suspend fun getLapsSnapshot(sessionId: Long): List<StopwatchLap>
 
     @Insert
     suspend fun insertLap(lap: StopwatchLap): Long

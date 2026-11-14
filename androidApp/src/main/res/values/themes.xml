@@ -8,7 +8,9 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
 
-    <style name="Theme.Chronos.Splash" parent="Theme.Chronos">
-        <item name="android:windowBackground">@android:color/black</item>
+    <style name="Theme.Chronos.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#101114</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_chronos_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Chronos</item>
     </style>
 </resources>

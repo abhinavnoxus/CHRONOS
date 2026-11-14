@@ -26,7 +26,8 @@ class AlarmViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val alarmDao: AlarmDao,
     private val alarmHistoryDao: AlarmHistoryDao,
-    private val alarmScheduler: AlarmScheduler
+    private val alarmScheduler: AlarmScheduler,
+    private val runtimeController: com.chronos.app.alarm.engine.AlarmRuntimeController
 ) : ViewModel() {
     val alarms: StateFlow<List<Alarm>> = alarmDao.getAllAlarms()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -96,6 +97,7 @@ class AlarmViewModel @Inject constructor(
             try {
                 alarmScheduler.cancelAlarm(alarm.id)
                 alarmDao.deleteAlarm(alarm)
+                runtimeController.forgetDeletedAlarm(alarm.id)
                 ChronosWidgetProvider.requestUpdate(context)
             } catch (exception: Exception) {
                 Log.e(TAG, "Could not delete alarm ${alarm.id}", exception)
