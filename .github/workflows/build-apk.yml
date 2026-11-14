@@ -34,10 +34,18 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon :androidApp:testDebugUnitTest
+        run: ./gradlew --no-daemon :androidApp:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log"
 
       - name: Build APK
-        run: ./gradlew --no-daemon :androidApp:assembleDebug
+        run: ./gradlew --no-daemon :androidApp:assembleDebug --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
+
+      - name: Surface Gradle failure details
+        if: failure()
+        run: |
+          if [[ -f "$RUNNER_TEMP/gradle.log" ]]; then
+            encoded_log="$(tail -n 60 "$RUNNER_TEMP/gradle.log" | base64 -w0)"
+            echo "::error title=Gradle failure tail (base64)::$encoded_log"
+          fi
 
       - name: Give APK a clear download name
         run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk "CHRONOS-v${GITHUB_SHA::7}-debug.apk"
