@@ -29,10 +29,23 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          script: ./gradlew --no-daemon :androidApp:connectedDebugAndroidTest --stacktrace
+          script: bash scripts/run-device-tests.sh
+      - name: Surface device-test diagnostics
+        if: failure()
+        run: |
+          if [[ -f "$RUNNER_TEMP/device-gradle.log" ]]; then
+            details="$(grep -nE '(^e: |error:|FAILED|FAILURES!!!|Tests run:|Exception|What went wrong|Execution failed)' "$RUNNER_TEMP/device-gradle.log" | tail -n 80 || true)"
+            echo "::error title=Device test failure (base64)::$(printf '%s' "$details" | base64 -w0)"
+          fi
+          failures="$(grep -Rh -A 12 '<failure' androidApp/build/outputs/androidTest-results/connected/*.xml 2>/dev/null | head -n 150 || true)"
+          if [[ -n "$failures" ]]; then echo "::error title=Device test assertions (base64)::$(printf '%s' "$failures" | base64 -w0)"; fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: CHRONOS-V4-instrumentation-reports
-          path: androidApp/build/reports/androidTests/**
+          path: |
+            androidApp/build/reports/androidTests/**
+            androidApp/build/outputs/androidTest-results/**
+            ${{ runner.temp }}/device-gradle.log
+            ${{ runner.temp }}/device-logcat.txt
           if-no-files-found: warn
