@@ -86,7 +86,7 @@ class ChronosSettings @Inject constructor(
         val defaultFocusMinutes = intPreferencesKey("default_focus_minutes")
         val defaultBreakMinutes = intPreferencesKey("default_break_minutes")
         val defaultLongBreakMinutes = intPreferencesKey("default_long_break_minutes")
-        val defaultRounds = intPreferencesKey("sessions_before_long_break")
+        val defaultRounds = intPreferencesKey("default_sessions_before_long_break")
         val useWallpaperColors = booleanPreferencesKey("use_wallpaper_colors")
         val dashboardOrder = stringPreferencesKey("dashboard_order")
         val focusActive = booleanPreferencesKey("focus_active")
@@ -118,7 +118,7 @@ class ChronosSettings @Inject constructor(
             focusMinutes = values[Keys.focusMinutes] ?: 25,
             breakMinutes = values[Keys.breakMinutes] ?: 5,
             longBreakMinutes = values[Keys.longBreakMinutes] ?: 15,
-            sessionsBeforeLongBreak = values[Keys.defaultRounds] ?: 4,
+            sessionsBeforeLongBreak = values[Keys.runtimeRounds] ?: 4,
             completedFocusSessions = values[Keys.completedFocusSessions] ?: 0,
             totalFocusMillis = values[Keys.totalFocusMillis] ?: 0L,
             sessionStartedAt = values[Keys.focusSessionStartedAt] ?: 0L,
@@ -139,7 +139,7 @@ class ChronosSettings @Inject constructor(
             values[Keys.focusMinutes] = runtime.focusMinutes
             values[Keys.breakMinutes] = runtime.breakMinutes
             values[Keys.longBreakMinutes] = runtime.longBreakMinutes
-            values[Keys.defaultRounds] = runtime.sessionsBeforeLongBreak
+            values[Keys.runtimeRounds] = runtime.sessionsBeforeLongBreak
             values[Keys.completedFocusSessions] = runtime.completedFocusSessions
             values[Keys.totalFocusMillis] = runtime.totalFocusMillis
             values[Keys.focusSessionStartedAt] = runtime.sessionStartedAt
@@ -160,6 +160,8 @@ class ChronosSettings @Inject constructor(
             values.remove(Keys.focusMinutes)
             values.remove(Keys.breakMinutes)
             values.remove(Keys.longBreakMinutes)
+            // Preserve older installs that shared the same key for runtime and defaults.
+            if (values[Keys.defaultRounds] == null) values[Keys.runtimeRounds]?.let { values[Keys.defaultRounds] = it }
             values.remove(Keys.runtimeRounds)
             values.remove(Keys.completedFocusSessions)
             values.remove(Keys.totalFocusMillis)
@@ -209,7 +211,7 @@ class ChronosSettings @Inject constructor(
             defaultFocusMinutes = (values[Keys.defaultFocusMinutes] ?: 25).coerceIn(5, 180),
             defaultBreakMinutes = (values[Keys.defaultBreakMinutes] ?: 5).coerceIn(1, 30),
             defaultLongBreakMinutes = (values[Keys.defaultLongBreakMinutes] ?: 15).coerceIn(5, 60),
-            sessionsBeforeLongBreak = (values[Keys.defaultRounds] ?: 4).coerceIn(2, 8)
+            sessionsBeforeLongBreak = (values[Keys.defaultRounds] ?: values[Keys.runtimeRounds] ?: 4).coerceIn(2, 8)
         )
     }
 

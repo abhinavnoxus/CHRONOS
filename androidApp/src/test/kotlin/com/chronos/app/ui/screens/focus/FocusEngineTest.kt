@@ -81,4 +81,10 @@ class FocusEngineTest {
         assertNotNull(sessions.first().endedAt)
         assertFalse(settings.focusRuntime.first().isActive)
     }
+    @Test fun stoppingFocusKeepsConfiguredDefaultRounds() = runTest {
+        settings.setFocusDefaults(25, 5, 15, 6)
+        engine.start("Work", 25, 5, 15, 2)
+        engine.stop()
+        assertEquals(6, settings.preferences.first().sessionsBeforeLongBreak)
+    }
 }
