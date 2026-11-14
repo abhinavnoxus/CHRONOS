@@ -49,7 +49,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.chronos.app.calendar.CalendarSyncManager
 import com.chronos.app.calendar.CalendarViewModel
 import com.chronos.app.data.model.CalendarEvent
