@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ═══════════════════════════════════════════════════════════
+         CHRONOS PERMISSIONS
+         ═══════════════════════════════════════════════════════════ -->
+
+    <!-- Alarm scheduling -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- Audio -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- Calendar integration -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+
+    <!-- Adaptive colours -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <!-- Foreground service for alarm playback -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".ChronosApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Chronos"
+        android:enableOnBackInvokedCallback="true"
+        tools:targetApi="34">
+
+        <!-- ═══════════════════════════════════════════════════════
+             MAIN ACTIVITY
+             ═══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Chronos.Splash">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ═══════════════════════════════════════════════════════
+             ALARM RINGING ACTIVITY (Full-screen, lock-screen)
+             ═══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".alarm.ui.AlarmRingingActivity"
+            android:exported="false"
+            android:showOnLockScreen="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Chronos" />
+
+        <!-- ═══════════════════════════════════════════════════════
+             ALARM SCHEDULING RECEIVER
+             ═══════════════════════════════════════════════════════ -->
+        <receiver
+            android:name=".alarm.receiver.AlarmTriggerReceiver"
+            android:exported="false" />
+
+        <!-- Dismiss action from notification -->
+        <receiver
+            android:name=".alarm.receiver.AlarmDismissReceiver"
+            android:exported="false" />
+
+        <!-- Snooze action from notification -->
+        <receiver
+            android:name=".alarm.receiver.AlarmSnoozeReceiver"
+            android:exported="false" />
+
+        <!-- Boot recovery: reschedule all alarms -->
+        <receiver
+            android:name=".alarm.receiver.BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ═══════════════════════════════════════════════════════
+             ALARM PLAYBACK SERVICE (Foreground)
+             ═══════════════════════════════════════════════════════ -->
+        <service
+            android:name=".alarm.service.AlarmPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- ═══════════════════════════════════════════════════════
+             PROVIDERS & INITIALIZERS
+             ═══════════════════════════════════════════════════════ -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+    </application>
+</manifest>
