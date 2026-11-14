@@ -28,8 +28,19 @@ android {
         }
     }
 
+    val releaseKeystore = System.getenv("CHRONOS_KEYSTORE_PATH")
+    if (!releaseKeystore.isNullOrBlank()) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = System.getenv("CHRONOS_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("CHRONOS_KEY_ALIAS")
+            keyPassword = System.getenv("CHRONOS_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            if (!releaseKeystore.isNullOrBlank()) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

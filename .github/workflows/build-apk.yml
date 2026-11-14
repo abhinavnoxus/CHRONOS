@@ -1,77 +1,99 @@
-name: Build CHRONOS V3 APK
+name: CHRONOS V4 validation
 
 on:
   push:
-    branches:
-      - main
-      - 'arena/**'
+    branches: [main, 'arena/**']
   workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  build:
-    name: Assemble installable debug APK
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v7
+concurrency:
+  group: chronos-v4-${{ github.ref }}
+  cancel-in-progress: true
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6
+jobs:
+  validate:
+    name: Tests, lint, debug and release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'
+      - uses: gradle/actions/setup-gradle@v6
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install Android SDK packages
-        run: sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Run unit tests
+      - name: Clean build, regression tests and lint
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew --no-daemon :androidApp:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+          ./gradlew --no-daemon clean :androidApp:testDebugUnitTest :androidApp:lintDebug :androidApp:assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle.log"
 
-      - name: Build APK
+      - name: Release APK and AAB (unsigned unless signing secrets are configured)
         shell: bash
+        env:
+          CHRONOS_KEYSTORE_BASE64: ${{ secrets.CHRONOS_KEYSTORE_BASE64 }}
+          CHRONOS_KEYSTORE_PASSWORD: ${{ secrets.CHRONOS_KEYSTORE_PASSWORD }}
+          CHRONOS_KEY_ALIAS: ${{ secrets.CHRONOS_KEY_ALIAS }}
+          CHRONOS_KEY_PASSWORD: ${{ secrets.CHRONOS_KEY_PASSWORD }}
         run: |
           set -o pipefail
-          ./gradlew --no-daemon :androidApp:assembleDebug --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
+          if [[ -n "$CHRONOS_KEYSTORE_BASE64" ]]; then
+            printf '%s' "$CHRONOS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/chronos-release.jks"
+            export CHRONOS_KEYSTORE_PATH="$RUNNER_TEMP/chronos-release.jks"
+          fi
+          ./gradlew --no-daemon :androidApp:assembleRelease :androidApp:bundleRelease --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/gradle.log"
+          rm -f "$RUNNER_TEMP/chronos-release.jks"
 
-      - name: Surface Gradle failure details
+      - name: Validate APK and bundle signatures/manifest
+        run: |
+          set -euo pipefail
+          debug=androidApp/build/outputs/apk/debug/androidApp-debug.apk
+          release=androidApp/build/outputs/apk/release/androidApp-release.apk
+          aab=androidApp/build/outputs/bundle/release/androidApp-release.aab
+          test -s "$debug" && test -s "$aab"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$debug"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$debug" | head -12
+          unzip -t "$aab" >/dev/null
+          if [[ -f "$release" ]]; then
+            "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$release" | head -12
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose "$release" || echo 'Release APK is unsigned; signing is required before distribution.'
+          fi
+          mkdir -p artifacts
+          cp "$debug" "artifacts/CHRONOS-v4-${GITHUB_SHA::7}-debug.apk"
+          cp "$aab" "artifacts/CHRONOS-v4-${GITHUB_SHA::7}-release.aab"
+          if [[ -f "$release" ]]; then cp "$release" "artifacts/CHRONOS-v4-${GITHUB_SHA::7}-release.apk"; fi
+          sha256sum artifacts/* > artifacts/SHA256SUMS.txt
+
+      - name: Surface concise Gradle failure details
         if: failure()
         run: |
           if [[ -f "$RUNNER_TEMP/gradle.log" ]]; then
-            diagnostics="$({
-              echo 'Gradle error lines:'
-              grep -nE '(^e: |error:|^FAILURE:|What went wrong:|^> Task .*FAILED|^Execution failed|^BUILD FAILED)' "$RUNNER_TEMP/gradle.log" | tail -n 30 || true
-              echo 'Final Gradle output:'
-              tail -n 30 "$RUNNER_TEMP/gradle.log"
-            } 2>&1)"
-            encoded_log="$(printf '%s' "$diagnostics" | base64 -w0)"
-            echo "::error title=Gradle failure details (base64)::$encoded_log"
+            diagnostics="$(grep -nE '(^e: |error:|^FAILURE:|What went wrong:|^> Task .*FAILED|^Execution failed|^BUILD FAILED|FAILED$)' "$RUNNER_TEMP/gradle.log" | tail -n 40 || true)"
+            echo "::error title=Gradle failure details (base64)::$(printf '%s' "$diagnostics" | base64 -w0)"
+            tail -n 60 "$RUNNER_TEMP/gradle.log"
           fi
-
-      - name: Give APK a clear download name
-        run: |
-          apk_path="$(find . -type f -iname '*.apk' -print -quit || true)"
-          if [[ -z "$apk_path" ]]; then
-            echo "::error title=APK missing::Gradle reported success but no APK was produced."
-            exit 1
-          fi
-          cp "$apk_path" "CHRONOS-v${GITHUB_SHA::7}-debug.apk"
-
-      - name: Upload installable APK
+      - name: Upload V4 artifacts
+        if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: CHRONOS-V3-APK
-          path: CHRONOS-*-debug.apk
+          name: CHRONOS-V4-${{ github.sha }}
+          path: artifacts/*
           if-no-files-found: error
           retention-days: 90
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: CHRONOS-V4-reports-${{ github.sha }}
+          path: |
+            androidApp/build/reports/tests/**
+            androidApp/build/test-results/**
+            androidApp/build/reports/lint-results-*
+            androidApp/schemas/**
+          if-no-files-found: warn
+          retention-days: 30

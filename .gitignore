@@ -35,3 +35,8 @@ Thumbs.db
 
 # Hilt / KSP
 /build/
+
+# Release signing material must never be committed
+*.jks
+*.keystore
+signing.properties
