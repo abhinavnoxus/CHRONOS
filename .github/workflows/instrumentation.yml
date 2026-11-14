@@ -1,5 +1,7 @@
 name: CHRONOS V4 device tests
 on:
+  push:
+    branches: ['arena/**']
   workflow_dispatch:
 permissions:
   contents: read
