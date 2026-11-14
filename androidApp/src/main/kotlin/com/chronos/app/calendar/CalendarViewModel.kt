@@ -1,6 +1,9 @@
 package com.chronos.app.calendar
 
 import android.util.Log
+import android.content.Context
+import com.chronos.app.widget.ChronosWidgetProvider
+import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chronos.app.data.CalendarEventDao
@@ -18,6 +21,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CalendarViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val calendarSyncManager: CalendarSyncManager,
     private val calendarEventDao: CalendarEventDao,
     private val database: com.chronos.app.data.ChronosDatabase
@@ -43,6 +47,7 @@ class CalendarViewModel @Inject constructor(
                     if (fetched.isNotEmpty()) calendarEventDao.insertAll(fetched)
                 }
                 _events.value = fetched.sortedBy { it.startTime }
+                ChronosWidgetProvider.requestUpdate(context)
             } catch (exception: SecurityException) {
                 _error.value = "Calendar access was denied. Your alarms and other CHRONOS features still work."
                 Log.w(TAG, "Calendar permission was revoked", exception)

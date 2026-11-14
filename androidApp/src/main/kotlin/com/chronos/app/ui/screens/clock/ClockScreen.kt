@@ -104,7 +104,8 @@ fun ClockScreen(
             }
         }
         item { NextAlarmCard(alarms = enabledAlarms, is24Hour = preferences.is24Hour, onOpenAlarms = { onNavigate("alarms") }) }
-        item {
+        item { HomeOverview(preferences.showAgenda, preferences.showReminders, preferences.is24Hour) { onNavigate("plan") } }
+        if (preferences.showQuickActions) item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = "QUICK ACCESS",

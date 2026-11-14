@@ -15,9 +15,11 @@ import javax.inject.Inject
 @HiltViewModel
 class InsightsViewModel @Inject constructor(
     focusSessionDao: FocusSessionDao,
-    alarmHistoryDao: AlarmHistoryDao
+    alarmHistoryDao: AlarmHistoryDao,
+    reminderDao: com.chronos.app.data.ReminderDao,
+    calendarEventDao: com.chronos.app.data.CalendarEventDao
 ) : ViewModel() {
-    val focusSessions: StateFlow<List<FocusSession>> = focusSessionDao.getAllSessions()
+    val focusSessions: StateFlow<List<FocusSession>> = focusSessionDao.getSessionsSince(System.currentTimeMillis() - 30L * 86_400_000L)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val alarmHistory: StateFlow<List<AlarmHistory>> = alarmHistoryDao.getHistorySince(

@@ -128,6 +128,7 @@ private fun TimerEditor(onDismiss: () -> Unit, onSave: (String, Int) -> Unit) {
     }, confirmButton = { TextButton(onClick = { onSave(label, minutes) }) { Text("Start") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StopwatchPane() {
     val viewModel: TimeToolsViewModel = hiltViewModel()

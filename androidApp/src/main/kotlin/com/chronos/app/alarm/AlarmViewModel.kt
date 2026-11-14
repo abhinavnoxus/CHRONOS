@@ -1,6 +1,9 @@
 package com.chronos.app.alarm
 
 import android.util.Log
+import android.content.Context
+import com.chronos.app.widget.ChronosWidgetProvider
+import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chronos.app.alarm.engine.AlarmScheduler
@@ -20,6 +23,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AlarmViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val alarmDao: AlarmDao,
     private val alarmHistoryDao: AlarmHistoryDao,
     private val alarmScheduler: AlarmScheduler
@@ -50,6 +54,7 @@ class AlarmViewModel @Inject constructor(
             try {
                 val id = alarmDao.insertAlarm(alarm.copy(id = 0L, isRinging = false))
                 val saved = alarm.copy(id = id, isRinging = false)
+                ChronosWidgetProvider.requestUpdate(context)
                 if (saved.isEnabled && !alarmScheduler.scheduleAlarm(saved)) {
                     _errorMessage.value = "The alarm was saved, but Android did not accept its schedule. Check Alarm Guard."
                 }
@@ -65,6 +70,7 @@ class AlarmViewModel @Inject constructor(
             try {
                 val updated = alarm.copy(updatedAt = System.currentTimeMillis())
                 alarmDao.updateAlarm(updated)
+                ChronosWidgetProvider.requestUpdate(context)
                 if (updated.isEnabled) {
                     if (!alarmScheduler.scheduleAlarm(updated)) {
                         _errorMessage.value = "The alarm was saved, but Android did not accept its schedule. Check Alarm Guard."
@@ -84,6 +90,7 @@ class AlarmViewModel @Inject constructor(
             try {
                 alarmScheduler.cancelAlarm(alarm.id)
                 alarmDao.deleteAlarm(alarm)
+                ChronosWidgetProvider.requestUpdate(context)
             } catch (exception: Exception) {
                 Log.e(TAG, "Could not delete alarm ${alarm.id}", exception)
                 _errorMessage.value = "Could not delete this alarm."
@@ -95,6 +102,7 @@ class AlarmViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 alarmDao.setAlarmEnabled(alarm.id, enabled)
+                ChronosWidgetProvider.requestUpdate(context)
                 if (enabled) {
                     if (!alarmScheduler.scheduleAlarm(alarm.copy(isEnabled = true))) {
                         _errorMessage.value = "The alarm is on, but Android did not accept its schedule. Check Alarm Guard."

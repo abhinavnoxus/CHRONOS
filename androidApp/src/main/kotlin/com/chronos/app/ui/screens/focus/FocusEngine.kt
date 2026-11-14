@@ -4,6 +4,7 @@ import com.chronos.app.data.FocusSessionDao
 import com.chronos.app.data.model.FocusSession
 import com.chronos.app.settings.ChronosSettings
 import com.chronos.app.settings.FocusRuntime
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -33,7 +34,7 @@ class FocusEngine @Inject constructor(
             focusMinutes = duration, breakMinutes = session.breakDuration, longBreakMinutes = session.longBreakDuration,
             sessionsBeforeLongBreak = session.sessionsBeforeLongBreak, sessionStartedAt = now,
             deadlineAt = now + millis, deadlineElapsedRealtime = clock.elapsedMillis() + millis,
-            bootCount = bootCount(), sessionId = id))
+            bootCount = clock.bootCount(), sessionId = id))
     }
 
     suspend fun pause() = mutex.withLock {
@@ -47,7 +48,7 @@ class FocusEngine @Inject constructor(
         if (!current.isActive || !current.isPaused) return@withLock
         val remaining = current.pausedRemainingMillis.coerceAtLeast(0L)
         settings.saveFocusRuntime(current.copy(isPaused = false, pausedRemainingMillis = 0L,
-            deadlineAt = clock.wallMillis() + remaining, deadlineElapsedRealtime = clock.elapsedMillis() + remaining, bootCount = bootCount()))
+            deadlineAt = clock.wallMillis() + remaining, deadlineElapsedRealtime = clock.elapsedMillis() + remaining, bootCount = clock.bootCount()))
     }
 
     suspend fun stop() = mutex.withLock {
@@ -103,5 +104,5 @@ class FocusEngine @Inject constructor(
         if (session != null && session.id == runtime.sessionId) sessionDao.updateSession(session.copy(endedAt = now,
             completedSessions = runtime.completedFocusSessions, totalFocusMinutes = (totalMillis / 60_000L).toInt()))
     }
-    private suspend fun kotlinx.coroutines.flow.Flow<FocusRuntime>.firstValue() = kotlinx.coroutines.flow.first(this)
+    private suspend fun kotlinx.coroutines.flow.Flow<FocusRuntime>.firstValue() = this.first()
 }

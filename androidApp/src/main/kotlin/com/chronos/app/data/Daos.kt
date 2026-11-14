@@ -101,6 +101,9 @@ interface CalendarEventDao {
     @Query("SELECT * FROM calendar_events WHERE startTime >= :from AND startTime <= :to ORDER BY startTime ASC")
     fun getEventsBetween(from: Long, to: Long): Flow<List<CalendarEvent>>
 
+    @Query("SELECT * FROM calendar_events WHERE endTime >= :from ORDER BY startTime ASC LIMIT 10")
+    suspend fun getUpcomingSnapshot(from: Long): List<CalendarEvent>
+
     @Query("SELECT * FROM calendar_events WHERE startTime >= :from ORDER BY startTime ASC LIMIT 10")
     fun getUpcomingEvents(from: Long): Flow<List<CalendarEvent>>
 
@@ -192,6 +195,9 @@ interface FocusSessionDao {
 
     @Query("SELECT * FROM focus_sessions ORDER BY startedAt DESC")
     fun getAllSessions(): Flow<List<FocusSession>>
+
+    @Query("SELECT * FROM focus_sessions WHERE startedAt >= :since ORDER BY startedAt DESC")
+    fun getSessionsSince(since: Long): Flow<List<FocusSession>>
 
     @Query("SELECT * FROM focus_sessions WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
     suspend fun getActiveSession(): FocusSession?

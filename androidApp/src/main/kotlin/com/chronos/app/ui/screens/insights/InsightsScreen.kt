@@ -47,6 +47,8 @@ fun InsightsScreen() {
     val viewModel: InsightsViewModel = hiltViewModel()
     val sessions by viewModel.focusSessions.collectAsStateWithLifecycle()
     val alarmHistory by viewModel.alarmHistory.collectAsStateWithLifecycle()
+    val reminders by viewModel.reminders.collectAsStateWithLifecycle()
+    val events by viewModel.events.collectAsStateWithLifecycle()
     val now = remember { System.currentTimeMillis() }
     val weekStart = remember(now) {
         Calendar.getInstance().apply {
@@ -105,6 +107,18 @@ fun InsightsScreen() {
                         color = palette.textSecondary
                     )
                 }
+            }
+        }
+        item {
+            GlassCard(Modifier.fillMaxWidth(), style = GlassStyle.SMOKED, cornerRadius = 22.dp) {
+                Text("Your time pattern", style = MaterialTheme.typography.titleLarge, color = palette.textPrimary)
+                Spacer(Modifier.height(10.dp))
+                Text("${reminders.count { it.isCompleted }} reminders completed · ${reminders.count { !it.isCompleted }} still open", style = MaterialTheme.typography.bodyMedium, color = palette.textSecondary)
+                val busiest = events.filter { !it.allDay }.groupBy { java.util.Calendar.getInstance().apply { timeInMillis = it.startTime }.get(java.util.Calendar.HOUR_OF_DAY) }.maxByOrNull { it.value.size }
+                Text(if (busiest == null) "Connect calendar access in Plan to see schedule patterns." else "Your cached schedule is busiest around ${String.format("%02d:00", busiest.key)} (${busiest.value.size} events in the cached week).", style = MaterialTheme.typography.bodyMedium, color = palette.textSecondary)
+                Spacer(Modifier.height(10.dp))
+                Text("Suggestion · no automatic changes", style = MaterialTheme.typography.labelMedium, color = palette.accentPrimary)
+                Text(if (totalMinutes == 0) "Try one short focus interval. Nothing is scheduled or changed until you choose it." else if (reminders.any { !it.isCompleted && it.scheduledTime < now }) "You have overdue reminders. Review them in Plan; CHRONOS will not reschedule them for you." else "Protect a recurring focus block around your quietest part of the day. This is guidance only, based on recorded and cached data.", style = MaterialTheme.typography.bodySmall, color = palette.textSecondary)
             }
         }
         item {

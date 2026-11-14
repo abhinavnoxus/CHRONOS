@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp" android:background="@drawable/widget_background">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CHRONOS" android:textColor="#C6A36B" android:textSize="11sp" android:letterSpacing="0.18" />
+    <TextClock android:layout_width="wrap_content" android:layout_height="wrap_content" android:format12Hour="h:mm a" android:format24Hour="HH:mm" android:textColor="#F5F2EC" android:textSize="34sp" android:fontFamily="monospace" />
+    <TextView android:id="@+id/widget_date" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#B8B7B3" android:textSize="12sp" />
+    <TextView android:id="@+id/widget_next_alarm" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:textColor="#C6A36B" android:textSize="13sp" android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/widget_agenda" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textColor="#F5F2EC" android:textSize="12sp" android:maxLines="3" android:ellipsize="end" />
+</LinearLayout>

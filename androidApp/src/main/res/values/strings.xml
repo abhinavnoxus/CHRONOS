@@ -2,6 +2,8 @@
 <resources>
     <string name="app_name">CHRONOS</string>
 
+    <string name="widget_description">Live clock, next alarm, and upcoming cached agenda. Tap to open CHRONOS.</string>
+
     <!-- Notification Channels -->
     <string name="channel_alarm_name">Alarm Alerts</string>
     <string name="channel_alarm_desc">Active alarm notifications with ringtone playback</string>
