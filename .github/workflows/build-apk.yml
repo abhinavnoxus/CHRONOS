@@ -49,9 +49,10 @@ jobs:
 
       - name: Give APK a clear download name
         run: |
-          apk_path="$(find androidApp/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          apk_path="$(find . -type f -iname '*.apk' -print -quit || true)"
           if [[ -z "$apk_path" ]]; then
-            echo "No APK was produced under androidApp/build/outputs/apk" >&2
+            echo "No APK was produced. Build output directories:" >&2
+            find . -type d \( -name outputs -o -name apk \) -print >&2 || true
             exit 1
           fi
           cp "$apk_path" "CHRONOS-v${GITHUB_SHA::7}-debug.apk"
