@@ -25,4 +25,7 @@ class InsightsViewModel @Inject constructor(
     val alarmHistory: StateFlow<List<AlarmHistory>> = alarmHistoryDao.getHistorySince(
         System.currentTimeMillis() - 8L * 24L * 60L * 60L * 1_000L
     ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val reminders = reminderDao.getAllReminders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val events = calendarEventDao.getAllEvents().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
